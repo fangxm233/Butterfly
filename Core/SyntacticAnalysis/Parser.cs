@@ -38,7 +38,7 @@ namespace Core.SyntacticAnalysis
         public static Dictionary<string, DefSpecifierNode>[] FilesAliases;
         public static NameSpaceDefinition RootNameSpace;
         public static NameSpaceDefinition EndNameSpace;
-        private static CustomDefinition _analysingStructure;
+        private static CustomDefinition _analyzingStructure;
 
         private static readonly OrderType[] s_cusDefinitionOrder =  {OrderType.DefineVariable, OrderType.Function};
         private static readonly OrderType[] s_interfaceDefinitionOrder = { OrderType.Function };
@@ -172,7 +172,7 @@ namespace Core.SyntacticAnalysis
                 else classDefinition.InheritanceName = "object";
             EndNameSpace.AddStructure(classDefinition);
             FilesDefinitions[Lexer.FileIndex].Add(classDefinition);
-            _analysingStructure = classDefinition;
+            _analyzingStructure = classDefinition;
             classDefinition.AddFunction(new FunctionDefinition(".ctor", classDefinition.AccessLevel, false));
             classDefinition.AddFunction(new FunctionDefinition(".cctor", classDefinition.AccessLevel, true));
             ChunkNode chunk = MatchChunk(s_cusDefinitionOrder);
@@ -182,7 +182,7 @@ namespace Core.SyntacticAnalysis
                     classDefinition.GetFunctionDefinition(".ctor").ChunkNode.AddNode(analysisNode);
                 classDefinition.AddField((DefineVariableNode)analysisNode);
             }
-            _analysingStructure = null;
+            _analyzingStructure = null;
         }
 
         private static void MatchStruct(AccessLevel accessLevel, bool isStatic)
@@ -199,13 +199,13 @@ namespace Core.SyntacticAnalysis
                     Lexer.Next();
                 }
             EndNameSpace.AddStructure(structDefinition);
-            _analysingStructure = structDefinition;
+            _analyzingStructure = structDefinition;
             FilesDefinitions[Lexer.FileIndex].Add(structDefinition);
             structDefinition.AddFunction(new FunctionDefinition(".ctor", structDefinition.AccessLevel, false));
             ChunkNode chunk = MatchChunk(s_cusDefinitionOrder);
             foreach (AnalysisNode analysisNode in chunk.Nodes)
                 structDefinition.AddField((DefineVariableNode)analysisNode);
-            _analysingStructure = null;
+            _analyzingStructure = null;
         }
 
         private static void MatchInterface(AccessLevel accessLevel)
@@ -217,17 +217,16 @@ namespace Core.SyntacticAnalysis
             FilesDefinitions[Lexer.FileIndex].Add(interfaceDefinition);
             if (accessLevel != AccessLevel.Public)
                 interfaceDefinition.AccessLevel = AnalysisAccessLevel(Lexer.NextTokenContent);
-            _analysingStructure = interfaceDefinition;
+            _analyzingStructure = interfaceDefinition;
             Lexer.Next();
             MatchChunk(s_interfaceDefinitionOrder, false, false);
-            _analysingStructure = null;
+            _analyzingStructure = null;
         }
 
         private static void MatchFunction(AccessLevel accessLevel, bool isStatic, bool haveDefinition = true)
         {
             Lexer.Match(TokenType.Identifer);
             FunctionDefinition function = new FunctionDefinition(Lexer.NextTokenContent, accessLevel, isStatic);
-            function.Structure = _analysingStructure;
 
             //参数
             Lexer.MatchNext("(");
@@ -260,7 +259,7 @@ namespace Core.SyntacticAnalysis
             }
             ChunkNode chunkNode = MatchChunk(s_commonOrder);
             function.ChunkNode = chunkNode;
-            _analysingStructure.AddFunction(function);
+            _analyzingStructure.AddFunction(function);
         }
 
         private static ChunkNode MatchChunk(OrderType[] order, bool haveAssign = true, bool haveDefinition = true)
@@ -414,12 +413,21 @@ namespace Core.SyntacticAnalysis
             AccessLevel accessLevel = AccessLevel.Local, bool isStatic = false)
         {
             assign = null;
+            bool isArray = false;
             Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
             string typeName = Lexer.NextTokenContent;
-            Lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
+            Lexer.Next();
+            if (Lexer.Match("["))
+            {
+                Lexer.MatchNext("]");
+                Lexer.Next();
+                isArray = true;
+            }
+            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
             string varName = Lexer.NextTokenContent;
             Lexer.Next();
-            DefineVariableNode defineVariable = new DefineVariableNode(varName, typeName, accessLevel, isStatic);
+            DefineVariableNode defineVariable =
+                new DefineVariableNode(varName, typeName, accessLevel, isStatic, isArray);
             if (Lexer.NextTokenContent == ";")
             {
                 Lexer.Next();
@@ -713,7 +721,16 @@ namespace Core.SyntacticAnalysis
                     NewNode newNode = new NewNode();
                     Lexer.MatchNext(TokenType.Identifer);
                     newNode.TypeName = Lexer.NextTokenContent;
-                    Lexer.MatchNext("("); //TODO:使用Match函数报错
+                    Lexer.Next();
+                    if (Lexer.Match("["))
+                    {
+                        Lexer.Next();
+                        newNode.IsArray = true;
+                        newNode.Expression = MatchExpression();
+                        Lexer.Match("]"); //TODO:使用Match函数报错
+                        return newNode;
+                    }
+                    Lexer.Match("("); //TODO:使用Match函数报错
                     Lexer.Next();
                     while (Lexer.NextTokenContent != ")")
                     {

@@ -1,7 +1,9 @@
-﻿namespace Core.SyntacticAnalysis.Nodes
+﻿using Core.SyntacticAnalysis.Definitions;
+
+namespace Core.SyntacticAnalysis.Nodes
 {
     public class ExpressionNode : AnalysisNode
     {
-        public OperateNode Operate;
+        public CustomDefinition Type { get; internal set; }
     }
 }

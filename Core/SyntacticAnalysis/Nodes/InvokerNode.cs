@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using Core.SyntacticAnalysis.Definitions;
 
 namespace Core.SyntacticAnalysis.Nodes
@@ -6,8 +7,9 @@ namespace Core.SyntacticAnalysis.Nodes
     public class InvokerNode : ElementNode
     {
         public string Name { get; internal set; }
-        public List<CustomDefinition> ParmTypes { get; internal set; } = new List<CustomDefinition>();
         public List<ExpressionNode> Parms { get; internal set; } = new List<ExpressionNode>();
+        public FunctionDefinition Function { get; internal set; }
+        internal string NameWithParms;
 
         public InvokerNode(string name)
         {
@@ -20,5 +22,7 @@ namespace Core.SyntacticAnalysis.Nodes
         {
             Parms.Add(expression);
         }
+
+        public override string ToString() => Parms.Aggregate(Name, (current, expression) => current + "#" + expression.Type.Name);
     }
 }

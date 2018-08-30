@@ -27,6 +27,8 @@ namespace Core.SyntacticAnalysis.Definitions
 
         public FunctionDefinition GetFunctionDefinition(string fullname) => ContainFunctions[fullname];
 
+        public bool Contain(string function) => ContainFunctions.ContainsKey(function);
+
         public override string ToString() => NameSpace + "." + Name;
     }
 }

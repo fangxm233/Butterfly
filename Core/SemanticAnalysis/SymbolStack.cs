@@ -16,7 +16,7 @@ namespace Core.SemanticAnalysis
 
         public void PushList() => _stack.Add(new Dictionary<string, DefineVariableNode>());
         public void PopList() => _stack.RemoveAt(_stack.Count);
-        //TODO:注意区分静态
+        
         public void Push(DefineVariableNode variable) => _stack.Last().Add(variable.Name, variable);
 
         public void AddAliase(string name, CustomDefinition definition) => _aliases.Add(name, definition);

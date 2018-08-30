@@ -2,8 +2,8 @@
 {
     public class AssignNode : AnalysisNode
     {
-        public ElementNode Left;
-        public ExpressionNode Right;
+        public ElementNode Left { get; internal set; }
+        public ExpressionNode Right { get; internal set; }
 
         public AssignNode()
         {

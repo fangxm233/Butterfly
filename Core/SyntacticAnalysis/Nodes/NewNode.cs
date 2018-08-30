@@ -5,8 +5,8 @@ namespace Core.SyntacticAnalysis.Nodes
 {
     public class NewNode : ElementNode
     {
-        public CustomDefinition Type { get; internal set; }
         public List<ExpressionNode> Parms { get; internal set; } = new List<ExpressionNode>();
+        public bool IsArray { get; internal set; }
         internal string TypeName;
 
         internal void AddParm(ExpressionNode expression)
