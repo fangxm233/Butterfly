@@ -9,7 +9,7 @@ namespace Core.SyntacticAnalysis.Nodes
         public string Name { get; internal set; }
         public List<ExpressionNode> Parms { get; internal set; } = new List<ExpressionNode>();
         public FunctionDefinition Function { get; internal set; }
-        internal string NameWithParms;
+        internal string NameWithParms => ToString();
 
         public InvokerNode(string name)
         {
@@ -23,6 +23,6 @@ namespace Core.SyntacticAnalysis.Nodes
             Parms.Add(expression);
         }
 
-        public override string ToString() => Parms.Aggregate(Name, (current, expression) => current + "#" + expression.Type.Name);
+        public override string ToString() => Parms.Aggregate(Name, (current, expression) => current + "#" + expression.Type.FullName);
     }
 }

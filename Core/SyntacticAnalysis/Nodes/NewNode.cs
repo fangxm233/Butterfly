@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using Core.SyntacticAnalysis.Definitions;
 
 namespace Core.SyntacticAnalysis.Nodes
@@ -7,12 +8,18 @@ namespace Core.SyntacticAnalysis.Nodes
     {
         public List<ExpressionNode> Parms { get; internal set; } = new List<ExpressionNode>();
         public bool IsArray { get; internal set; }
+        public FunctionDefinition Constructor { get; internal set; }
+        internal string NameWithParms => ToString();
         internal string TypeName;
 
         internal void AddParm(ExpressionNode expression)
         {
             Parms.Add(expression);
             NodeType = NodeType.New;
+            ElemtntType = ElemtntType.New;
         }
+
+        public override string ToString() =>
+            Parms.Aggregate(".ctor", (current, expression) => current + "#" + expression.Type.Name);
     }
 }

@@ -227,6 +227,7 @@ namespace Core.SyntacticAnalysis
         {
             Lexer.Match(TokenType.Identifer);
             FunctionDefinition function = new FunctionDefinition(Lexer.NextTokenContent, accessLevel, isStatic);
+            function.Structure = _analyzingStructure;
 
             //参数
             Lexer.MatchNext("(");

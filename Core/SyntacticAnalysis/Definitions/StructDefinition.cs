@@ -5,9 +5,7 @@ namespace Core.SyntacticAnalysis.Definitions
 {
     public class StructDefinition : CustomDefinition
     {
-        public CustomDefinition InheritanceType;
         public readonly Dictionary<string, DefineVariableNode> ContainFields = new Dictionary<string, DefineVariableNode>();
-        internal string InheritanceName;
 
         public StructDefinition(string name, NameSpaceDefinition nameSpace, AccessLevel accessLevel, bool isStatic) :
             base(name, nameSpace, accessLevel, isStatic)
@@ -20,5 +18,7 @@ namespace Core.SyntacticAnalysis.Definitions
             ContainFields.Add(fieldDefination.Name, fieldDefination);
             return true;
         }
+
+        public DefineVariableNode GetField(string name) => ContainFields.ContainsKey(name) ? ContainFields[name] : null;
     }
 }

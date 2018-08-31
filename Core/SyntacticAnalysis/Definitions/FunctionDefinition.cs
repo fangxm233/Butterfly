@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using Core.SyntacticAnalysis.Nodes;
 
 namespace Core.SyntacticAnalysis.Definitions
@@ -26,6 +27,13 @@ namespace Core.SyntacticAnalysis.Definitions
         internal void AddParm(DefineVariableNode variable)
         {
             ParmDefinition.Add(variable);
+            if (Structure.Name == Name)
+            {
+                NameWithParms = IsStatic ? ".cctor" : ".ctor";
+                NameWithParms = ParmDefinition.Aggregate(NameWithParms,
+                    (current, defineVariableNode) => current + "#" + variable.TypeName);
+                return;
+            }
             NameWithParms += "#" + variable.TypeName;
         }
 

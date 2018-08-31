@@ -1,4 +1,5 @@
-﻿using Core.SyntacticAnalysis.Definitions;
+﻿using System;
+using Core.SyntacticAnalysis.Definitions;
 
 namespace Core.SyntacticAnalysis.Nodes
 {
@@ -15,12 +16,54 @@ namespace Core.SyntacticAnalysis.Nodes
 
     public class OperateNode : ExpressionNode
     {
-        public bool IsUnary;
-        public OperateType OperateType;
-        public ExpressionNode Left, Right;
+        public OperateType OperateType { get; internal set; }
+        public ExpressionNode Left { get; internal set; }
+        public ExpressionNode Right { get; internal set; }
+        public string OP
+        {
+            get
+            {
+                switch (OperateType)
+                {
+                    case OperateType.UMinus:
+                        return "-";
+                    case OperateType.Not:
+                        return "!";
+                    case OperateType.Cast:
+                        return "cast<>";
+                    case OperateType.Multiply:
+                        return "*";
+                    case OperateType.Divide:
+                        return "/";
+                    case OperateType.Modulus:
+                        return "%";
+                    case OperateType.Puls:
+                        return "+";
+                    case OperateType.Minus:
+                        return "-";
+                    case OperateType.Greater:
+                        return ">";
+                    case OperateType.GreaterEqual:
+                        return ">=";
+                    case OperateType.Less:
+                        return "<";
+                    case OperateType.LessEqual:
+                        return "<=";
+                    case OperateType.Equal:
+                        return "==";
+                    case OperateType.NotEqual:
+                        return "!=";
+                    case OperateType.And:
+                        return "&&";
+                    case OperateType.Or:
+                        return "||";
+                }
+                return null;
+            }
+        }
 
+        public CustomDefinition CastType { get; internal set; }
         internal string CastTypeName;
-        public CustomDefinition CastType;
 
         public OperateNode(OperateType operateType, ExpressionNode left, ExpressionNode right)
         {
@@ -33,7 +76,6 @@ namespace Core.SyntacticAnalysis.Nodes
         public OperateNode(OperateType operateType, ExpressionNode right)
         {
             Right = right;
-            IsUnary = true;
             OperateType = operateType;
             NodeType = NodeType.Operate;
         }
@@ -44,7 +86,6 @@ namespace Core.SyntacticAnalysis.Nodes
             NodeType = NodeType.Operate;
             CastTypeName = castTypeName;
             Right = right;
-            IsUnary = true;
         }
     }
 }

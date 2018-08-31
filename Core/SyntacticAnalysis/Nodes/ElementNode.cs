@@ -15,6 +15,7 @@ namespace Core.SyntacticAnalysis.Nodes
         Boolean,
         Invoker,
         Array,
+        New,
         This,
         Null,
     }

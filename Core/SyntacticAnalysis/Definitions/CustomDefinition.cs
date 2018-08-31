@@ -13,10 +13,21 @@ namespace Core.SyntacticAnalysis.Definitions
         }
 
         public string Name { get; internal set; }
+        public string FullName
+        {
+            get {
+                if (_fullName != null) return _fullName;
+                _fullName = ToString();
+                return _fullName;
+            }
+        }
         public NameSpaceDefinition NameSpace { get; internal set; }
         public AccessLevel AccessLevel { get; internal set; }
         public bool IsStatic { get; internal set; }
+        public CustomDefinition InheritanceType;
         public readonly Dictionary<string, FunctionDefinition> ContainFunctions = new Dictionary<string, FunctionDefinition>();
+        internal string InheritanceName;
+        private string _fullName;
 
         internal bool AddFunction(FunctionDefinition functionDefinition)
         {
