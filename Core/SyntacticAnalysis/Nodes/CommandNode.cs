@@ -1,4 +1,6 @@
-﻿namespace Core.SyntacticAnalysis.Nodes
+﻿using Core.SyntacticAnalysis.Definitions;
+
+namespace Core.SyntacticAnalysis.Nodes
 {
     public enum CommandType
     {
@@ -11,6 +13,9 @@
     {
         public CommandType Type { get; internal set; }
         public ExpressionNode Expression { get; internal set; }
+
+        public AnalysisNode Loop { get; internal set; }
+        public FunctionDefinition Function { get; internal set; }
 
         public CommandNode(CommandType command)
         {

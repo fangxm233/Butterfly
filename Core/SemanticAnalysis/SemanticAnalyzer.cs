@@ -6,12 +6,26 @@ using Core.SyntacticAnalysis.Nodes;
 
 namespace Core.SemanticAnalysis
 {
-/* 未完成
- * 表达式类型推断
- * 命令作用语句判断
- * 函数返回判断
- * 各种语句判断
- */
+    /* 未完成
+     * 表达式类型推断
+     * 命令作用语句判断
+     * 函数返回判断
+     * 各种语句判断
+     */
+
+    //需要支持的错误
+    //TODO:支持 涉及 "" 和 "" 的循环基类依赖项 CS0146
+    //TODO:支持 使用了未赋值的局部变量 "" CS0165
+    //TODO:支持 在给"this"对象的所有字段赋值之前，无法使用该对象 CS0188
+    //TODO:支持 只有 assignment、call、/*increment、decrement*/ 和 new 对象表达式可用作语句 CS0201
+    //TODO:支持 "" 和 "" 之间具有二义性 CS0229
+    //TODO:支持 命名空间 "" 中不存在类型或命名空间名 ""（是否缺少程序集引用？） CS0234
+    //TODO:支持 无法修改取消装箱转换的结果 CS0445
+    //TODO:支持 ""：重写 "" 继承成员 "" 时不能更改访问修饰符 CS0507
+    //TODO:支持 "" 类型的结构成员 "" 在结构布局中导致循环 CS0523
+    //TODO:支持 在控件返回调用方之前，自动实现的属性"name"的支持字段必须完全赋值 CS0843
+    //TODO:支持 应输入关键字"this"或"base" CS1018
+    //TODO:支持 无法修改 "" 的返回值，因为它不是变量 CS1612
 
     public class SemanticAnalyzer
     {
@@ -19,6 +33,7 @@ namespace Core.SemanticAnalysis
         private static int _fileIndex;
         private static CustomDefinition _analyzingStructure;
         private static FunctionDefinition _analyzingFunction;
+        private static Stack<AnalysisNode> _loopStack;
 
         public static void Analyze()
         {
@@ -62,6 +77,7 @@ namespace Core.SemanticAnalysis
             foreach (DefineVariableNode defineVariableNode in function.ParmDefinition)
                 AnalyzeVarDef(defineVariableNode);
             function.ReturnType = Symbols.GetDefinition(function.ReturnTypeName);
+            if (function.ReturnType == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
             AnalyzeChunk(function.ChunkNode, false);
             Symbols.PopList();
             _analyzingFunction = null;
@@ -71,6 +87,7 @@ namespace Core.SemanticAnalysis
         {
             Symbols.Push(variable);
             variable.Type = Symbols.GetDefinition(variable.TypeName);
+            if (variable.Type == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
         }
 
         private static void AnalyzeChunk(ChunkNode chunk, bool newList = true)
@@ -87,9 +104,44 @@ namespace Core.SemanticAnalysis
             if (ifNode.Else != null) AnalyzeChunk(ifNode.Else);
         }
 
+        private static void AnalyzeForNode(ForNode forNode)
+        {
+            Symbols.PushList();
+            AnalyzeChunk(forNode.Left, false);
+            AnalyzeExpression(forNode.Middle);
+            AnalyzeChunk(forNode.Right, false);
+            AnalyzeChunk(forNode.Chunk, false);
+            Symbols.PopList();
+        }
+
+        private static void AnalyzeWhileNode(WhileNode whileNode)
+        {
+            AnalyzeExpression(whileNode.Condition);
+            AnalyzeChunk(whileNode.Chunk);
+        }
+
         private static void AnalyzeAssign(AssignNode assignNode)
         {
-            
+            AnalyzeExpression(assignNode.Left);
+            AnalyzeExpression(assignNode.Right);
+            if (Symbols.CanImplicitCast(assignNode.Right.Type, assignNode.Left.Type)) return;
+            //TODO:报错 无法将类型 "" 隐式转换为 ""
+        }
+
+        private static void AnalyzeCommand(CommandNode commandNode)
+        {
+            if (commandNode.Type == CommandType.Return)
+            {
+                commandNode.Function = _analyzingFunction;
+                if (commandNode.Expression == null && _analyzingFunction.ReturnTypeName == "void") return;
+                if (commandNode.Expression == null) return; //TODO:报错 需要一个类型可转换为 "" 的对象
+                if (commandNode.Expression != null && _analyzingFunction.ReturnTypeName == "void") return; //TODO:报错 由于 "" 返回 void,返回关键字后面不得有对象表达式
+                AnalyzeExpression(commandNode.Expression);
+                if (!Symbols.CanImplicitCast(commandNode.Expression.Type, _analyzingFunction.ReturnType)) return; //TODO:报错 无法将类型 "" 隐式转换为 ""
+                return;
+            }
+            if (_loopStack.Count == 0) return; //TODO:报错 没有要中断或继续的封闭循环
+            AnalysisNode loop = _loopStack.Peek();
         }
 
         private static void AnalyzeExpression(ExpressionNode expression)
@@ -130,7 +182,7 @@ namespace Core.SemanticAnalysis
                         operate.Type = operate.Left.Type;
                     else if (!Symbols.CanImplicitCast(operate.Left.Type, operate.Right.Type)) 
                         operate.Type = operate.Right.Type;
-                    else return; //TODO:报错 无法将类型 "" 转换为 ""
+                    else return; //TODO:报错 无法将类型 "" 隐式转换为 ""
                     break;
                 case OperateType.Greater:
                 case OperateType.GreaterEqual:
@@ -177,6 +229,7 @@ namespace Core.SemanticAnalysis
                     foreach (ExpressionNode expressionNode in newNode.Parms)
                         AnalyzeExpression(expressionNode);
                     newNode.Type = Symbols.GetDefinition(newNode.TypeName);
+                    if (newNode.Type == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
                     if (newNode.Type is InterfaceDefinition) return; //TODO:报错 无法创建接口 "" 的实例
                     if (!newNode.Type.Contain(newNode.NameWithParms)) return; //TODO:报错 当前上文中不存在函数 ""
                     newNode.Constructor = newNode.Type.GetFunctionDefinition(newNode.NameWithParms);
@@ -194,7 +247,7 @@ namespace Core.SemanticAnalysis
                         break;
                     }
                     CustomDefinition definition = Symbols.GetDefinition(element.Content);
-                    if (definition == null) return; //TODO:报错 当前上文中不存在符号
+                    if (definition == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
                     element.ElemtntType = ElemtntType.CustomType;
                     element.Type = definition;
                     if (element.NextElement == null) return; //TODO:报错 "" 是个类型，在给定的上下文中无效

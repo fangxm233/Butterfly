@@ -30,7 +30,10 @@ namespace Core.SyntacticAnalysis
     {
         Local, Public, Private, Internal,
     }
-    
+
+    //需要支持的错误
+    //TODO:支持 无效的秩说明符:应为","或"]" CS0178
+
     internal class Parser
     {
         public static List<NameSpaceDefinition>[] FilesReferences;
