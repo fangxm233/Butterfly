@@ -40,7 +40,7 @@ namespace Core.SyntacticAnalysis
         public static List<CustomDefinition>[] FilesDefinitions;
         public static Dictionary<string, DefSpecifierNode>[] FilesAliases;
         public static NameSpaceDefinition RootNameSpace;
-        public static NameSpaceDefinition EndNameSpace;
+        private static NameSpaceDefinition _endNameSpace;
         private static CustomDefinition _analyzingStructure;
 
         private static readonly OrderType[] s_cusDefinitionOrder =  {OrderType.DefineVariable, OrderType.Function};
@@ -55,7 +55,7 @@ namespace Core.SyntacticAnalysis
         private static void Init(string outputName)
         {
             RootNameSpace = new NameSpaceDefinition(outputName);
-            EndNameSpace = new NameSpaceDefinition(outputName);
+            _endNameSpace = new NameSpaceDefinition(outputName);
             FilesReferences = new List<NameSpaceDefinition>[Lexer.FileCount];
             FilesAliases = new Dictionary<string, DefSpecifierNode>[Lexer.FileCount];
             for (int i = 0; i < Lexer.FileCount; i++)
@@ -155,7 +155,7 @@ namespace Core.SyntacticAnalysis
                 last = last.GetNameSpaceDefinition(Lexer.NextTokenContent);
                 Lexer.Next();
             }
-            EndNameSpace = last;
+            _endNameSpace = last;
             Lexer.MatchNow(";"); //TODO:使用Match函数报错
         }
 
@@ -163,7 +163,7 @@ namespace Core.SyntacticAnalysis
         {
             Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
             ClassDefinition classDefinition =
-                new ClassDefinition(Lexer.NextTokenContent, EndNameSpace, accessLevel, isStatic);
+                new ClassDefinition(Lexer.NextTokenContent, _endNameSpace, accessLevel, isStatic);
             if (accessLevel != AccessLevel.Public)
                 classDefinition.AccessLevel = AnalysisAccessLevel(Lexer.NextTokenContent);
             if(Lexer.MatchNext(":"))
@@ -173,7 +173,7 @@ namespace Core.SyntacticAnalysis
                     Lexer.Next();
                 }
                 else classDefinition.InheritanceName = "object";
-            EndNameSpace.AddStructure(classDefinition);
+            _endNameSpace.AddStructure(classDefinition);
             FilesDefinitions[Lexer.FileIndex].Add(classDefinition);
             _analyzingStructure = classDefinition;
             classDefinition.AddFunction(new FunctionDefinition(".ctor", classDefinition.AccessLevel, false));
@@ -192,7 +192,7 @@ namespace Core.SyntacticAnalysis
         {
             Lexer.MatchNow(TokenType.Identifer); //TODO:使用Match函数报错
             StructDefinition structDefinition =
-                new StructDefinition(Lexer.NextTokenContent, EndNameSpace, accessLevel, isStatic);
+                new StructDefinition(Lexer.NextTokenContent, _endNameSpace, accessLevel, isStatic);
             if (accessLevel != AccessLevel.Public)
                 structDefinition.AccessLevel = AnalysisAccessLevel(Lexer.NextTokenContent);
             if (Lexer.MatchNext(":"))
@@ -201,7 +201,7 @@ namespace Core.SyntacticAnalysis
                     structDefinition.InheritanceName = Lexer.NextTokenContent;
                     Lexer.Next();
                 }
-            EndNameSpace.AddStructure(structDefinition);
+            _endNameSpace.AddStructure(structDefinition);
             _analyzingStructure = structDefinition;
             FilesDefinitions[Lexer.FileIndex].Add(structDefinition);
             structDefinition.AddFunction(new FunctionDefinition(".ctor", structDefinition.AccessLevel, false));
@@ -215,8 +215,8 @@ namespace Core.SyntacticAnalysis
         {
             Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
             InterfaceDefinition interfaceDefinition =
-                new InterfaceDefinition(Lexer.NextTokenContent, EndNameSpace, accessLevel);
-            EndNameSpace.AddStructure(interfaceDefinition);
+                new InterfaceDefinition(Lexer.NextTokenContent, _endNameSpace, accessLevel);
+            _endNameSpace.AddStructure(interfaceDefinition);
             FilesDefinitions[Lexer.FileIndex].Add(interfaceDefinition);
             if (accessLevel != AccessLevel.Public)
                 interfaceDefinition.AccessLevel = AnalysisAccessLevel(Lexer.NextTokenContent);

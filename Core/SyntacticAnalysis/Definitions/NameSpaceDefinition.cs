@@ -6,8 +6,8 @@ namespace Core.SyntacticAnalysis.Definitions
     {
         public string Name { get; internal set; }
         public NameSpaceDefinition PreviousNameSpace { get; internal set; }
-        private readonly Dictionary<string, NameSpaceDefinition> _containNameSpaces = new Dictionary<string, NameSpaceDefinition>();
-        private readonly Dictionary<string, CustomDefinition> _containStructures = new Dictionary<string, CustomDefinition>();
+        public readonly Dictionary<string, NameSpaceDefinition> ContainNameSpaces = new Dictionary<string, NameSpaceDefinition>();
+        public readonly Dictionary<string, CustomDefinition> ContainStructures = new Dictionary<string, CustomDefinition>();
 
         public NameSpaceDefinition(string name)
         {
@@ -16,36 +16,36 @@ namespace Core.SyntacticAnalysis.Definitions
 
         internal void AddAfter(NameSpaceDefinition nameSpaceDefinition)
         {
-            _containNameSpaces.Add(nameSpaceDefinition.Name,nameSpaceDefinition);
+            ContainNameSpaces.Add(nameSpaceDefinition.Name,nameSpaceDefinition);
             nameSpaceDefinition.PreviousNameSpace = this;
         }
         internal void AddAfter(string name)
         {
             NameSpaceDefinition definition = new NameSpaceDefinition(name);
-            _containNameSpaces.Add(name, definition);
+            ContainNameSpaces.Add(name, definition);
             definition.PreviousNameSpace = this;
         }
 
         internal bool AddStructure(CustomDefinition classDefinition)
         {
-            if (_containStructures.ContainsKey(classDefinition.Name)) return false;
-            _containStructures.Add(classDefinition.Name, classDefinition);
+            if (ContainStructures.ContainsKey(classDefinition.Name)) return false;
+            ContainStructures.Add(classDefinition.Name, classDefinition);
             return true;
         }
         internal bool AddNameSpace(NameSpaceDefinition nameSpaceDefinition)
         {
-            if (_containNameSpaces.ContainsKey(nameSpaceDefinition.Name)) return false;
-            _containNameSpaces.Add(nameSpaceDefinition.Name, nameSpaceDefinition);
+            if (ContainNameSpaces.ContainsKey(nameSpaceDefinition.Name)) return false;
+            ContainNameSpaces.Add(nameSpaceDefinition.Name, nameSpaceDefinition);
             return true;
         }
 
-        public bool IsContain(CustomDefinition classDefinition) => _containStructures.ContainsKey(classDefinition.Name);
-        public bool IsContain(NameSpaceDefinition nameSpaceDefinition) => _containNameSpaces.ContainsKey(nameSpaceDefinition.Name);
-        public bool IsContainNameSpace(string name) => _containNameSpaces.ContainsKey(name);
-        public bool IsContainCustomDefinition(string name) => _containStructures.ContainsKey(name);
+        public bool IsContain(CustomDefinition classDefinition) => ContainStructures.ContainsKey(classDefinition.Name);
+        public bool IsContain(NameSpaceDefinition nameSpaceDefinition) => ContainNameSpaces.ContainsKey(nameSpaceDefinition.Name);
+        public bool IsContainNameSpace(string name) => ContainNameSpaces.ContainsKey(name);
+        public bool IsContainCustomDefinition(string name) => ContainStructures.ContainsKey(name);
 
-        public CustomDefinition GetClassDefinition(string name) => _containStructures[name];
-        public NameSpaceDefinition GetNameSpaceDefinition(string name) => _containNameSpaces[name];
+        public CustomDefinition GetClassDefinition(string name) => ContainStructures[name];
+        public NameSpaceDefinition GetNameSpaceDefinition(string name) => ContainNameSpaces[name];
 
         public override string ToString() => PreviousNameSpace == null ? Name : PreviousNameSpace + "." + Name;
     }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Core.LexicalAnalysis;
+using Core.SyntacticAnalysis;
 using Core.SyntacticAnalysis.Definitions;
 using Core.SyntacticAnalysis.Nodes;
 
@@ -15,6 +16,7 @@ namespace Core.SemanticAnalysis
 
     //需要支持的错误
     //TODO:支持 涉及 "" 和 "" 的循环基类依赖项 CS0146
+    //TODO:支持 ""：并非所有的代码路径都返回值 CS0161
     //TODO:支持 使用了未赋值的局部变量 "" CS0165
     //TODO:支持 在给"this"对象的所有字段赋值之前，无法使用该对象 CS0188
     //TODO:支持 只有 assignment、call、/*increment、decrement*/ 和 new 对象表达式可用作语句 CS0201
@@ -29,63 +31,74 @@ namespace Core.SemanticAnalysis
 
     public class SemanticAnalyzer
     {
-        internal static SymbolManager Symbols = new SymbolManager();
+        internal static readonly SymbolManager Symbols = new SymbolManager();
         private static int _fileIndex;
         private static CustomDefinition _analyzingStructure;
         private static FunctionDefinition _analyzingFunction;
-        private static Stack<AnalysisNode> _loopStack;
+        private static readonly Stack<AnalysisNode> _loopStack = new Stack<AnalysisNode>();
 
         public static void Analyze()
         {
-            
+            GenerateMetadata(Parser.RootNameSpace);
+            for (; _fileIndex < Lexer.FileCount; _fileIndex++)
+            {
+                foreach (KeyValuePair<string, DefSpecifierNode> defSpecifierNode in Parser.FilesAliases[_fileIndex])
+                {
+                    
+                }
+            }
         }
 
-        private static void AnalyzeCusDef(CustomDefinition definition)
+        private static void GenerateMetadata(NameSpaceDefinition nameSpace)
         {
-            _analyzingStructure = definition;
-            Symbols.PushList();
-            if (definition is ClassDefinition classDefinition) AnalyzeClass(classDefinition);
-            if (definition is StructDefinition structDefinition) AnalyzeStruct(structDefinition);
+            foreach (KeyValuePair<string, CustomDefinition> ContainStructure in nameSpace.ContainStructures)
+                GenerateMetadata(ContainStructure.Value);
+            foreach (KeyValuePair<string, NameSpaceDefinition> ContainNameSpace in nameSpace.ContainNameSpaces)
+                GenerateMetadata(ContainNameSpace.Value);
+        }
+
+        private static void GenerateMetadata(CustomDefinition definition)
+        {
+            Symbols.Add(definition);
+            if (definition is ClassDefinition classDefinition) GenerateClassMetadata(classDefinition);
+            if (definition is StructDefinition structDefinition) GenerateStructMetadata(structDefinition);
             foreach (KeyValuePair<string, FunctionDefinition> function in definition.ContainFunctions)
-                AnalyzeFunction(function.Value);
-            Symbols.PopList();
-            _analyzingStructure = null;
+                GenerateFuncMetadata(function.Value);
         }
 
-        private static void AnalyzeClass(ClassDefinition definition)
+        private static void GenerateClassMetadata(ClassDefinition definition)
         {
             foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
-            {
-                field.Value.Type = Symbols.GetDefinition(field.Value.TypeName);
-                Symbols.Push(field.Value);
-            }
+                AnalyzeVarDef(field.Value);
         }
 
-        private static void AnalyzeStruct(StructDefinition definition)
+        private static void GenerateStructMetadata(StructDefinition definition)
         {
             foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
-            {
-                field.Value.Type = Symbols.GetDefinition(field.Value.TypeName);
-                Symbols.Push(field.Value);
-            }
+                AnalyzeVarDef(field.Value);
+        }
+
+        private static void GenerateFuncMetadata(FunctionDefinition function)
+        {
+            foreach (DefineVariableNode defineVariableNode in function.ParmDefinition)
+                AnalyzeVarDef(defineVariableNode);
+            function.ReturnType = Symbols.GetDefinition(function.ReturnTypeName);
+            if (function.ReturnType == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
         }
 
         private static void AnalyzeFunction(FunctionDefinition function)
         {
             _analyzingFunction = function;
             Symbols.PushList();
-            foreach (DefineVariableNode defineVariableNode in function.ParmDefinition)
-                AnalyzeVarDef(defineVariableNode);
-            function.ReturnType = Symbols.GetDefinition(function.ReturnTypeName);
-            if (function.ReturnType == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
-            AnalyzeChunk(function.ChunkNode, false);
+            if (function.ChunkNode != null)
+                AnalyzeChunk(function.ChunkNode, false);
             Symbols.PopList();
             _analyzingFunction = null;
         }
 
-        private static void AnalyzeVarDef(DefineVariableNode variable)
+        private static void AnalyzeVarDef(DefineVariableNode variable, bool shouldPush = true)
         {
-            Symbols.Push(variable);
+            if (shouldPush) Symbols.Push(variable);
             variable.Type = Symbols.GetDefinition(variable.TypeName);
             if (variable.Type == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
         }
@@ -93,8 +106,47 @@ namespace Core.SemanticAnalysis
         private static void AnalyzeChunk(ChunkNode chunk, bool newList = true)
         {
             if(newList)Symbols.PushList();
-
-            if(newList)Symbols.PopList();
+            foreach (AnalysisNode analysisNode in chunk.Nodes)
+            {
+                switch (analysisNode)
+                {
+                    case AssignNode assignNode:
+                        AnalyzeAssign(assignNode);
+                        break;
+                    case CommandNode commandNode:
+                        AnalyzeCommand(commandNode);
+                        break;
+                    case DefineVariableNode defineVariableNode:
+                        AnalyzeVarDef(defineVariableNode);
+                        break;
+                    case InvokerNode invokerNode:
+                        AnalyzeElement(invokerNode);
+                        if (invokerNode.GetLastElement().ElemtntType != ElemtntType.Invoker)
+                            return; //TODO:报错 只有assignment、invoker 和 new 对象表达式可用作语句
+                        break;
+                    case NewNode newNode:
+                        AnalyzeElement(newNode);
+                        switch (newNode.GetLastElement().ElemtntType)
+                        {
+                            case ElemtntType.New:
+                            case ElemtntType.Invoker:
+                                break;
+                            default:
+                                return; //TODO:报错 只有assignment、invoker 和 new 对象表达式可用作语句
+                        }
+                        break;
+                    case IfNode ifNode:
+                        AnalyzeIf(ifNode);
+                        break;
+                    case ForNode forNode:
+                        AnalyzeForNode(forNode);
+                        break;
+                    case WhileNode whileNode:
+                        AnalyzeWhileNode(whileNode);
+                        break;
+                }
+            }
+            if (newList)Symbols.PopList();
         }
 
         private static void AnalyzeIf(IfNode ifNode)
@@ -107,17 +159,21 @@ namespace Core.SemanticAnalysis
         private static void AnalyzeForNode(ForNode forNode)
         {
             Symbols.PushList();
+            _loopStack.Push(forNode);
             AnalyzeChunk(forNode.Left, false);
             AnalyzeExpression(forNode.Middle);
             AnalyzeChunk(forNode.Right, false);
             AnalyzeChunk(forNode.Chunk, false);
+            _loopStack.Pop();
             Symbols.PopList();
         }
 
         private static void AnalyzeWhileNode(WhileNode whileNode)
         {
+            _loopStack.Push(whileNode);
             AnalyzeExpression(whileNode.Condition);
             AnalyzeChunk(whileNode.Chunk);
+            _loopStack.Pop();
         }
 
         private static void AnalyzeAssign(AssignNode assignNode)

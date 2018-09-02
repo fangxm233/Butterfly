@@ -42,5 +42,14 @@ namespace Core.SyntacticAnalysis.Nodes
         }
 
         public ElementNode() { }
+
+        public ElementNode GetLastElement()
+        {
+            if (NextElement == null) return this;
+            ElementNode element = NextElement;
+            while (element.NextElement != null)
+                element = element.NextElement;
+            return element;
+        }
     }
 }
