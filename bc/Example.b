@@ -1,6 +1,4 @@
-﻿using System.IO;
-
-namespace Example;
+﻿namespace Example;
 
 public class Program
 {
@@ -14,7 +12,7 @@ public class Program
 		let t.i = 233.3;
 		var Test t_Copy = t.Copy();
 		inv CheatPrint(b);
-		var string s = cast<string>'s';
+		var int s = cast<int>'s';
 		for(var int f = 0; i < 100; let i = i + 1;)
 		{
 			if(i == 50) break;
@@ -42,22 +40,46 @@ public class Program
 class Test : ITest
 {
 	var int i;
+	var ITest ttt;
 
 	func Test(int i)
 	{
 		let i = i;
 	}
 
+	func Test(int i, ITest t)
+	{
+		let i = i;
+		let ttt = t;
+	}
+
 	func Copy() : Test
 	{
-		return new Test(i + (2 * 4 - 8));
+		return new Test((2 * 4 - 8));
 	}
+
+	func copy(int i) : 
+	{
+		return new Test(i + (2 * 4 - 8))
+	}
+
+	//func copy(ITest it) : 
+	//{
+		//return new Test(i + (2 * 4 - 8))
+	//}
 }
 
 interface ITest
 {
 	func GetTest();
 }
+
+struct int{}
+struct char{}
+struct float{}
+struct bool{}
+struct void{}
+class string{}
 
 /*
 444

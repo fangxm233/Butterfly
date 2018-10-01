@@ -36,7 +36,7 @@ namespace Core.SyntacticAnalysis
 
     internal class Parser
     {
-        public static List<NameSpaceDefinition>[] FilesReferences;
+        public static List<UsingNode>[] FilesReferences;
         public static List<CustomDefinition>[] FilesDefinitions;
         public static Dictionary<string, DefSpecifierNode>[] FilesAliases;
         public static NameSpaceDefinition RootNameSpace;
@@ -56,12 +56,14 @@ namespace Core.SyntacticAnalysis
         {
             RootNameSpace = new NameSpaceDefinition(outputName);
             _endNameSpace = new NameSpaceDefinition(outputName);
-            FilesReferences = new List<NameSpaceDefinition>[Lexer.FileCount];
+            FilesReferences = new List<UsingNode>[Lexer.FileCount];
             FilesAliases = new Dictionary<string, DefSpecifierNode>[Lexer.FileCount];
+            FilesDefinitions = new List<CustomDefinition>[Lexer.FileCount];
             for (int i = 0; i < Lexer.FileCount; i++)
             {
-                FilesReferences[i] = new List<NameSpaceDefinition>();
+                FilesReferences[i] = new List<UsingNode>();
                 FilesAliases[i] = new Dictionary<string, DefSpecifierNode>();
+                FilesDefinitions[i] = new List<CustomDefinition>();
             }
         }
 
@@ -120,7 +122,7 @@ namespace Core.SyntacticAnalysis
 
         private static void MatchUsing()
         {
-            List<NameSpaceDefinition> nameSpaces = FilesReferences[Lexer.FileIndex];
+            List<UsingNode> references = FilesReferences[Lexer.FileIndex];
             Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
             string s = Lexer.NextTokenContent;
             if (Lexer.MatchNext("="))
@@ -129,13 +131,13 @@ namespace Core.SyntacticAnalysis
                 FilesAliases[Lexer.FileIndex].Add(s, MatchDefinitionSpecifier());
                 return;
             }
-            nameSpaces.Add(new NameSpaceDefinition(Lexer.NextTokenContent));
-            NameSpaceDefinition last = nameSpaces.Last();
+            references.Add(new UsingNode(s));
+            UsingNode last = references.Last();
             while (Lexer.Match("."))
             {
                 Lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
                 last.AddAfter(Lexer.NextTokenContent);
-                last = last.GetNameSpaceDefinition(Lexer.NextTokenContent);
+                last = last.NextUsing;
                 Lexer.Next();
             }
             Lexer.MatchNow(";"); //TODO:使用Match函数报错
@@ -190,7 +192,7 @@ namespace Core.SyntacticAnalysis
 
         private static void MatchStruct(AccessLevel accessLevel, bool isStatic)
         {
-            Lexer.MatchNow(TokenType.Identifer); //TODO:使用Match函数报错
+            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
             StructDefinition structDefinition =
                 new StructDefinition(Lexer.NextTokenContent, _endNameSpace, accessLevel, isStatic);
             if (accessLevel != AccessLevel.Public)
@@ -241,7 +243,8 @@ namespace Core.SyntacticAnalysis
                 DefineVariableNode variable =
                     MatchDefineVariable(out AssignNode assign, false);
                 function.AddParm(variable);
-                if (Lexer.NextTokenContent != "," && Lexer.NextTokenContent != ")") return; //TODO:报错 意外的符号
+                if (Lexer.NextTokenContent == ",") Lexer.Next();
+                else if (Lexer.NextTokenContent != ")") return; //TODO:报错 意外的符号
             }
 
             //返回值
@@ -276,6 +279,11 @@ namespace Core.SyntacticAnalysis
                 isMatchOneNode = true;
             while (true)
             {
+                if (Lexer.Match("}"))
+                {
+                    Lexer.Next();
+                    return chunk;
+                }
                 switch (Lexer.NextTokenType)
                 {
                     case TokenType.Static:
@@ -351,11 +359,6 @@ namespace Core.SyntacticAnalysis
                         return chunk; //TODO:报错 意外的符号
                 }
                 if (isMatchOneNode) return chunk;
-                if (Lexer.Match("}"))
-                {
-                    Lexer.Next();
-                    return chunk;
-                }
             }
         }
 
@@ -477,10 +480,11 @@ namespace Core.SyntacticAnalysis
 
         private static InvokerNode MatchInvoker(string functionName)
         {
+            Lexer.Next();
             InvokerNode invoker = new InvokerNode(functionName);
             while (Lexer.NextTokenContent != ")")
             {
-                Lexer.Next();
+                //Lexer.Next();
                 invoker.AddParm(MatchExpression());
                 if (Lexer.NextTokenContent != "," && Lexer.NextTokenContent != ")") return invoker; //TODO:报错 意外的符号
             }
@@ -639,13 +643,13 @@ namespace Core.SyntacticAnalysis
                 switch (s)
                 {
                     case "*":
-                        expression = new OperateNode(OperateType.Equal, expression, MatchUnary());
+                        expression = new OperateNode(OperateType.Multiply, expression, MatchUnary());
                         break;
                     case "/":
-                        expression = new OperateNode(OperateType.NotEqual, expression, MatchUnary());
+                        expression = new OperateNode(OperateType.Divide, expression, MatchUnary());
                         break;
                     case "%":
-                        expression = new OperateNode(OperateType.NotEqual, expression, MatchUnary());
+                        expression = new OperateNode(OperateType.Modulus, expression, MatchUnary());
                         break;
                 }
             }
@@ -714,7 +718,9 @@ namespace Core.SyntacticAnalysis
                         name = Lexer.NextTokenContent;
                         Lexer.Next();
                         if (Lexer.NextTokenContent == "(")
+                        {
                             next.NextElement = MatchInvoker(name);
+                        }
                         else if (Lexer.NextTokenContent == "[")
                             next.NextElement = MatchArray(name);
                         else next.NextElement = new ElementNode(ElemtntType.Variable, name);
@@ -751,6 +757,7 @@ namespace Core.SyntacticAnalysis
                         Lexer.Next();
                         ElementNode expression = new ElementNode
                         {
+                            NodeType = NodeType.Element,
                             ElemtntType = ElemtntType.Expression,
                             Expression = MatchExpression()
                         };

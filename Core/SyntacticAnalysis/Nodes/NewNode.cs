@@ -12,12 +12,13 @@ namespace Core.SyntacticAnalysis.Nodes
         internal string NameWithParms => ToString();
         internal string TypeName;
 
-        internal void AddParm(ExpressionNode expression)
+        public NewNode()
         {
-            Parms.Add(expression);
-            NodeType = NodeType.New;
+            NodeType = NodeType.Element;
             ElemtntType = ElemtntType.New;
         }
+
+        internal void AddParm(ExpressionNode expression) => Parms.Add(expression);
 
         public override string ToString() =>
             Parms.Aggregate(".ctor", (current, expression) => current + "#" + expression.Type.Name);

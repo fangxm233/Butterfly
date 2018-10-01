@@ -15,8 +15,8 @@ namespace Core.SemanticAnalysis
         private Dictionary<string, CustomDefinition> _defenitions = new Dictionary<string, CustomDefinition>();
 
         public void PushList() => _stack.Add(new Dictionary<string, DefineVariableNode>());
-        public void PopList() => _stack.RemoveAt(_stack.Count);
-        
+        public void PopList() => _stack.RemoveAt(_stack.Count - 1);
+
         public void Push(DefineVariableNode variable) => _stack.Last().Add(variable.Name, variable);
 
         public DefineVariableNode this[string name]
@@ -57,13 +57,22 @@ namespace Core.SemanticAnalysis
         public bool CanImplicitCast(CustomDefinition previous, CustomDefinition castType)
         {
             if (previous.FullName == castType.FullName) return true;
+            if (previous.Name == "byte" && castType.Name == "int") return true;
+            if (previous.Name == "byte" && castType.Name == "float") return true;
             if (previous.Name == "char" && castType.Name == "int") return true;
+            if (previous.Name == "char" && castType.Name == "float") return true;
             if (previous.Name == "int" && castType.Name == "float") return true;
             return IsInherit(previous, castType);
         }
 
-        public bool CanBeCastInto(CustomDefinition previous, CustomDefinition castType) =>
-            CanImplicitCast(previous, castType) || IsInherit(castType, previous);
+        public bool CanBeCastInto(CustomDefinition previous, CustomDefinition castType)
+        {
+            if ((previous.Name == "int" || previous.Name == "float" || previous.Name == "char" ||
+                 previous.Name == "byte") && (castType.Name == "int" || castType.Name == "float" ||
+                                              castType.Name == "char" || castType.Name == "byte"))
+                return true;
+            return CanImplicitCast(previous, castType) || IsInherit(castType, previous);
+        } 
 
         public bool IsNumberic(CustomDefinition definition) =>
             definition.Name == "int" || definition.Name == "float" || definition.Name == "char";

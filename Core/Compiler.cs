@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using Core.LexicalAnalysis;
+using Core.SemanticAnalysis;
 using Core.SyntacticAnalysis;
 
 namespace Core
@@ -9,12 +10,13 @@ namespace Core
     {
         public static void Compile(string[] files)
         {
-            Stopwatch sw = new Stopwatch();
+            //Stopwatch sw = new Stopwatch();
             Lexer.Scan(files);
-            sw.Start();
+            //sw.Start();
             Parser.Match(files[0]);
-            sw.Stop();
-            Console.WriteLine(sw.ElapsedMilliseconds);
+            SemanticAnalyzer.Analyze();
+            //sw.Stop();
+            //Console.WriteLine(sw.ElapsedMilliseconds);
             //Lexer.Next();
             //while (Lexer.NextToken.Type != TokenType.EOF)
             //{

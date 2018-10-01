@@ -15,7 +15,7 @@ namespace Core.SyntacticAnalysis.Nodes
         {
             Name = name;
             ElemtntType = ElemtntType.Invoker;
-            NodeType = NodeType.Invoker;
+            NodeType = NodeType.Element;
         }
 
         internal void AddParm(ExpressionNode expression)
@@ -23,6 +23,6 @@ namespace Core.SyntacticAnalysis.Nodes
             Parms.Add(expression);
         }
 
-        public override string ToString() => Parms.Aggregate(Name, (current, expression) => current + "#" + expression.Type.FullName);
+        public override string ToString() => Parms.Aggregate(Name, (current, expression) => current + "#" + expression.Type.Name);
     }
 }

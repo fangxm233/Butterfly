@@ -8,10 +8,10 @@ using Core.SyntacticAnalysis.Nodes;
 namespace Core.SemanticAnalysis
 {
     /* 未完成
-     * 表达式类型推断
-     * 命令作用语句判断
-     * 函数返回判断
-     * 各种语句判断
+     * 继承
+     * 访问修饰
+     * 构造函数
+     * 
      */
 
     //需要支持的错误
@@ -35,61 +35,116 @@ namespace Core.SemanticAnalysis
         private static int _fileIndex;
         private static CustomDefinition _analyzingStructure;
         private static FunctionDefinition _analyzingFunction;
-        private static readonly Stack<AnalysisNode> _loopStack = new Stack<AnalysisNode>();
+        private static readonly Stack<AnalysisNode> s_loopStack = new Stack<AnalysisNode>();
 
         public static void Analyze()
         {
-            GenerateMetadata(Parser.RootNameSpace);
             for (; _fileIndex < Lexer.FileCount; _fileIndex++)
+                GenerateMetadata(_fileIndex);
+            for (_fileIndex = 0; _fileIndex < Lexer.FileCount; _fileIndex++)
             {
+                foreach (UsingNode usingNode in Parser.FilesReferences[_fileIndex])
+                    Symbols.AddReference(usingNode.GetLast().NameSpace.ContainStructures);
                 foreach (KeyValuePair<string, DefSpecifierNode> defSpecifierNode in Parser.FilesAliases[_fileIndex])
-                {
-                    
-                }
+                    Symbols.AddAliase(defSpecifierNode.Key, GetDefinition(defSpecifierNode.Value));
+                foreach (CustomDefinition definition in Parser.FilesDefinitions[_fileIndex])
+                    Symbols.Add(definition);
+                foreach (CustomDefinition customDefinition in Parser.FilesDefinitions[_fileIndex])
+                    AnalyzeStructure(customDefinition);
             }
         }
 
-        private static void GenerateMetadata(NameSpaceDefinition nameSpace)
+        private static void GenerateMetadata(int fileIndex)
         {
-            foreach (KeyValuePair<string, CustomDefinition> ContainStructure in nameSpace.ContainStructures)
-                GenerateMetadata(ContainStructure.Value);
-            foreach (KeyValuePair<string, NameSpaceDefinition> ContainNameSpace in nameSpace.ContainNameSpaces)
-                GenerateMetadata(ContainNameSpace.Value);
+            foreach (UsingNode usingNode in Parser.FilesReferences[fileIndex])
+            {
+                AnalyzeUsing(usingNode);
+                Symbols.AddReference(usingNode.GetLast().NameSpace.ContainStructures);
+            }
+            foreach (CustomDefinition definition in Parser.FilesDefinitions[fileIndex])
+                Symbols.Add(definition);
+            foreach (CustomDefinition definition in Parser.FilesDefinitions[fileIndex])
+            {
+                if (definition is ClassDefinition classDefinition) GenerateClassMetadata(classDefinition);
+                if (definition is StructDefinition structDefinition) GenerateStructMetadata(structDefinition);
+            }
+            foreach (CustomDefinition definition in Parser.FilesDefinitions[fileIndex])
+                foreach (KeyValuePair<string, FunctionDefinition> function in definition.ContainFunctions)
+                    GenerateFuncMetadata(function.Value);
+            Symbols.Clear();
         }
 
-        private static void GenerateMetadata(CustomDefinition definition)
-        {
-            Symbols.Add(definition);
-            if (definition is ClassDefinition classDefinition) GenerateClassMetadata(classDefinition);
-            if (definition is StructDefinition structDefinition) GenerateStructMetadata(structDefinition);
-            foreach (KeyValuePair<string, FunctionDefinition> function in definition.ContainFunctions)
-                GenerateFuncMetadata(function.Value);
-        }
+        //private static void GenerateStructureMetadata(CustomDefinition definition)
+        //{
+        //    if (definition is ClassDefinition classDefinition) GenerateClassMetadata(classDefinition);
+        //    if (definition is StructDefinition structDefinition) GenerateStructMetadata(structDefinition);
+        //    foreach (KeyValuePair<string, FunctionDefinition> function in definition.ContainFunctions)
+        //        GenerateFuncMetadata(function.Value);
+        //}
 
         private static void GenerateClassMetadata(ClassDefinition definition)
         {
             foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
-                AnalyzeVarDef(field.Value);
+                AnalyzeVarDef(field.Value, false);
         }
 
         private static void GenerateStructMetadata(StructDefinition definition)
         {
             foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
-                AnalyzeVarDef(field.Value);
+                AnalyzeVarDef(field.Value, false);
         }
 
         private static void GenerateFuncMetadata(FunctionDefinition function)
         {
             foreach (DefineVariableNode defineVariableNode in function.ParmDefinition)
-                AnalyzeVarDef(defineVariableNode);
+                AnalyzeVarDef(defineVariableNode, false);
             function.ReturnType = Symbols.GetDefinition(function.ReturnTypeName);
             if (function.ReturnType == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
+        }
+
+        private static void AnalyzeStructure(CustomDefinition definition)
+        {
+            _analyzingStructure = definition;
+            Symbols.PushList();
+            if (definition is ClassDefinition classDefinition) AnalyzeClass(classDefinition);
+            if (definition is StructDefinition structDefinition) AnalyzeStrurt(structDefinition);
+            Symbols.PopList();
+            _analyzingStructure = null;
+        }
+
+        private static void AnalyzeClass(ClassDefinition definition)
+        {
+            foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
+                AnalyzeVarDef(field.Value);
+            foreach (KeyValuePair<string, FunctionDefinition> function in definition.ContainFunctions)
+                AnalyzeFunction(function.Value);
+        }
+
+        private static void AnalyzeStrurt(StructDefinition definition)
+        {
+            foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
+                AnalyzeVarDef(field.Value);
+            foreach (KeyValuePair<string, FunctionDefinition> function in definition.ContainFunctions)
+                AnalyzeFunction(function.Value);
+        }
+
+        private static void AnalyzeUsing(UsingNode usingNode)
+        {
+            for (NameSpaceDefinition nameSpace = Parser.RootNameSpace;
+                usingNode.NextUsing != null;
+                usingNode = usingNode.NextUsing)
+            {
+                if (!nameSpace.IsContainNameSpace(usingNode.Name)) return; //TODO:报错 未找到命名空间名
+                usingNode.NameSpace = nameSpace.GetNameSpaceDefinition(usingNode.Name);
+            }
         }
 
         private static void AnalyzeFunction(FunctionDefinition function)
         {
             _analyzingFunction = function;
             Symbols.PushList();
+            foreach (DefineVariableNode defineVariableNode in function.ParmDefinition)
+                AnalyzeVarDef(defineVariableNode);
             if (function.ChunkNode != null)
                 AnalyzeChunk(function.ChunkNode, false);
             Symbols.PopList();
@@ -99,6 +154,7 @@ namespace Core.SemanticAnalysis
         private static void AnalyzeVarDef(DefineVariableNode variable, bool shouldPush = true)
         {
             if (shouldPush) Symbols.Push(variable);
+            if (variable.Type != null) return;
             variable.Type = Symbols.GetDefinition(variable.TypeName);
             if (variable.Type == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
         }
@@ -159,21 +215,21 @@ namespace Core.SemanticAnalysis
         private static void AnalyzeForNode(ForNode forNode)
         {
             Symbols.PushList();
-            _loopStack.Push(forNode);
+            s_loopStack.Push(forNode);
             AnalyzeChunk(forNode.Left, false);
             AnalyzeExpression(forNode.Middle);
             AnalyzeChunk(forNode.Right, false);
             AnalyzeChunk(forNode.Chunk, false);
-            _loopStack.Pop();
+            s_loopStack.Pop();
             Symbols.PopList();
         }
 
         private static void AnalyzeWhileNode(WhileNode whileNode)
         {
-            _loopStack.Push(whileNode);
+            s_loopStack.Push(whileNode);
             AnalyzeExpression(whileNode.Condition);
             AnalyzeChunk(whileNode.Chunk);
-            _loopStack.Pop();
+            s_loopStack.Pop();
         }
 
         private static void AnalyzeAssign(AssignNode assignNode)
@@ -196,8 +252,8 @@ namespace Core.SemanticAnalysis
                 if (!Symbols.CanImplicitCast(commandNode.Expression.Type, _analyzingFunction.ReturnType)) return; //TODO:报错 无法将类型 "" 隐式转换为 ""
                 return;
             }
-            if (_loopStack.Count == 0) return; //TODO:报错 没有要中断或继续的封闭循环
-            AnalysisNode loop = _loopStack.Peek();
+            if (s_loopStack.Count == 0) return; //TODO:报错 没有要中断或继续的封闭循环
+            AnalysisNode loop = s_loopStack.Peek();
         }
 
         private static void AnalyzeExpression(ExpressionNode expression)
@@ -223,7 +279,7 @@ namespace Core.SemanticAnalysis
                 case OperateType.Cast:
                     AnalyzeExpression(operate.Right);
                     operate.CastType = Symbols.GetDefinition(operate.CastTypeName);
-                    if (!Symbols.CanImplicitCast(operate.Right.Type, operate.CastType)) return; //TODO:报错 无法将类型 "" 转换为 ""
+                    if (!Symbols.CanBeCastInto(operate.Right.Type, operate.CastType)) return; //TODO:报错 无法将类型 "" 转换为 ""
                     operate.Type = operate.CastType;
                     break;
                 case OperateType.Multiply:
@@ -234,9 +290,9 @@ namespace Core.SemanticAnalysis
                     AnalyzeExpression(operate.Left);
                     AnalyzeExpression(operate.Right);
                     if (!Symbols.IsNumberic(operate.Left.Type) || !Symbols.IsNumberic(operate.Right.Type)) return; //TODO:报错 暂不支持运算符重载
-                    if (!Symbols.CanImplicitCast(operate.Right.Type, operate.Left.Type))
+                    if (Symbols.CanImplicitCast(operate.Right.Type, operate.Left.Type))
                         operate.Type = operate.Left.Type;
-                    else if (!Symbols.CanImplicitCast(operate.Left.Type, operate.Right.Type)) 
+                    else if (Symbols.CanImplicitCast(operate.Left.Type, operate.Right.Type)) 
                         operate.Type = operate.Right.Type;
                     else return; //TODO:报错 无法将类型 "" 隐式转换为 ""
                     break;
@@ -246,6 +302,10 @@ namespace Core.SemanticAnalysis
                 case OperateType.LessEqual:
                 case OperateType.Equal:
                 case OperateType.NotEqual:
+                    AnalyzeExpression(operate.Left);
+                    AnalyzeExpression(operate.Right);
+                    operate.Type = Symbols.GetDefinition("bool");
+                    break;
                 case OperateType.And:
                 case OperateType.Or:
                     AnalyzeExpression(operate.Left);
@@ -256,14 +316,15 @@ namespace Core.SemanticAnalysis
             }
         }
 
-        private static void AnalyzeElement(ElementNode element)
+        private static void AnalyzeElement(ElementNode element) //写的不好
         {
             switch (element.ElemtntType)
             {
                 case ElemtntType.Unknown:
                     return; //TODO:报错 未知错误
                 case ElemtntType.Expression:
-                    AnalyzeExpression(element);
+                    AnalyzeExpression(element.Expression);
+                    element.Type = element.Expression.Type;
                     break;
                 case ElemtntType.Integer:
                     element.Type = Symbols.GetDefinition("int");
@@ -290,9 +351,10 @@ namespace Core.SemanticAnalysis
                     if (!newNode.Type.Contain(newNode.NameWithParms)) return; //TODO:报错 当前上文中不存在函数 ""
                     newNode.Constructor = newNode.Type.GetFunctionDefinition(newNode.NameWithParms);
                     if (newNode.NextElement != null) AnalyzeNextElement(newNode.NextElement, element.Type);
+                    newNode.Type = newNode.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
                 case ElemtntType.Variable:
-                    if (Symbols.Contain(element.Content))
+                    if (Symbols.Contain(element.Content)) //处理标识符表示对象的情况
                     {
                         DefineVariableNode variable = Symbols[element.Content];
                         if (_analyzingFunction.IsStatic && !variable.IsStatic)
@@ -300,14 +362,17 @@ namespace Core.SemanticAnalysis
                         element.Definition = variable;
                         element.Type = element.Definition.Type;
                         if (element.NextElement != null) AnalyzeNextElement(element.NextElement, element.Type);
+                        element.Type = element.LastElement.Type; //由头一个标识符表示整串标识符的类型
                         break;
                     }
+                    //处理标识符表示类型名字的情况
                     CustomDefinition definition = Symbols.GetDefinition(element.Content);
                     if (definition == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
                     element.ElemtntType = ElemtntType.CustomType;
                     element.Type = definition;
                     if (element.NextElement == null) return; //TODO:报错 "" 是个类型，在给定的上下文中无效
                     AnalyzeNextElement(element.NextElement, element.Type, true);
+                    element.Type = element.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
                 case ElemtntType.Invoker:
                     InvokerNode invoker = (InvokerNode) element;
@@ -317,7 +382,9 @@ namespace Core.SemanticAnalysis
                     FunctionDefinition function = _analyzingStructure.GetFunctionDefinition(invoker.NameWithParms);
                     if (_analyzingFunction.IsStatic && !function.IsStatic) return; //TODO:报错 对象引用对于非静态的字段、方法或属性 "" 是必须的
                     invoker.Function = function;
-                    if(invoker.NextElement!=null) AnalyzeNextElement(invoker.NextElement, element.Type);
+                    invoker.Type = function.ReturnType;
+                    if (invoker.NextElement != null) AnalyzeNextElement(invoker.NextElement, element.Type);
+                    invoker.Type = invoker.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
                 case ElemtntType.Array:
                     if (!Symbols.Contain(element.Content)) return; //TODO:报错 当前上文中不存在标识符 ""
@@ -327,6 +394,7 @@ namespace Core.SemanticAnalysis
                     element.Definition = Symbols[element.Content];
                     element.Type = element.Definition.Type;
                     if (element.NextElement != null) AnalyzeNextElement(element.NextElement, element.Type);
+                    element.Type = element.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
             }
         }
@@ -348,13 +416,14 @@ namespace Core.SemanticAnalysis
                     if (element.NextElement != null) AnalyzeNextElement(element.NextElement, element.Type);
                     break;
                 case ElemtntType.Invoker:
-                    if (!enviroument.Contain(element.Content)) return; //TODO:报错 当前上文中不存在函数 ""
                     InvokerNode invoker = (InvokerNode)element;
                     foreach (ExpressionNode expressionNode in invoker.Parms)
                         AnalyzeExpression(expressionNode);
+                    if (!enviroument.Contain(invoker.NameWithParms)) return; //TODO:报错 当前上文中不存在函数 ""
                     FunctionDefinition function = enviroument.GetFunctionDefinition(invoker.NameWithParms);
                     if (isStatic && !function.IsStatic) return; //TODO:报错 对象引用对于非静态的字段、方法或属性 "" 是必须的
                     invoker.Function = function;
+                    invoker.Type = function.ReturnType;
                     if (invoker.NextElement != null) AnalyzeNextElement(invoker.NextElement, element.Type);
                     break;
                 case ElemtntType.Array:
@@ -371,6 +440,23 @@ namespace Core.SemanticAnalysis
                     if (element.NextElement != null) AnalyzeNextElement(element.NextElement, element.Type);
                     break;
             }
+        }
+
+        private static CustomDefinition GetDefinition(DefSpecifierNode defSpecifier)
+        {
+            for (NameSpaceDefinition nameSpace = Parser.RootNameSpace;
+                defSpecifier.NextSpecifier != null;
+                defSpecifier = defSpecifier.NextSpecifier)
+            {
+                if (nameSpace.IsContainCustomDefinition(defSpecifier.Content) &&
+                    nameSpace.IsContainNameSpace(defSpecifier.Content))
+                    if (defSpecifier.NextSpecifier == null) return nameSpace.GetClassDefinition(defSpecifier.Content);
+                if (nameSpace.IsContainCustomDefinition(defSpecifier.Content))
+                    return nameSpace.GetClassDefinition(defSpecifier.Content);
+                if (nameSpace.IsContainNameSpace(defSpecifier.Content))
+                    nameSpace = nameSpace.GetNameSpaceDefinition(defSpecifier.Content);
+            }
+            return null; //TODO:报错 最后一个不是类型
         }
     }
 }

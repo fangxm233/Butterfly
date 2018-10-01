@@ -22,7 +22,7 @@ namespace Core.SyntacticAnalysis.Definitions
         public ChunkNode ChunkNode { get; internal set; }
         public AccessLevel AccessLevel { get; internal set; }
         public bool IsStatic { get; internal set; }
-        internal string ReturnTypeName;
+        internal string ReturnTypeName = "void";
 
         internal void AddParm(DefineVariableNode variable)
         {
