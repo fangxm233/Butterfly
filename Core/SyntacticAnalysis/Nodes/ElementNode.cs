@@ -29,7 +29,7 @@ namespace Core.SyntacticAnalysis.Nodes
         public ElementNode NextElement { get; internal set; }
         public ElementNode LastElement => GetLastElement();
 
-        //给括号、array和new数组的表达式
+        //给括号的表达式
         public ExpressionNode Expression { get; internal set; }
 
         //给除了null和Unknown以外的所有种类

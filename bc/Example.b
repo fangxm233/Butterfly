@@ -13,6 +13,7 @@ public class Program
 		var Test t_Copy = t.Copy();
 		inv CheatPrint(b);
 		var int s = cast<int>'s';
+		var int[,,,,,,,] arr = new int[0,0,0,0,0,0,0,0];
 		for(var int f = 0; i < 100; let i = i + 1;)
 		{
 			if(i == 50) break;
@@ -58,15 +59,15 @@ class Test : ITest
 		return new Test((2 * 4 - 8));
 	}
 
-	func copy(int i) : 
+	func copy(int i) : Test
 	{
-		return new Test(i + (2 * 4 - 8))
+		return new Test(i + (2 * 4 - 8));
 	}
 
-	//func copy(ITest it) : 
-	//{
-		//return new Test(i + (2 * 4 - 8))
-	//}
+	func copy(ITest it) : Test
+	{
+		return new Test(i + (2 * 4 - 8));
+	}
 }
 
 interface ITest

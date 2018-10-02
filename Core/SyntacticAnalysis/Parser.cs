@@ -31,9 +31,6 @@ namespace Core.SyntacticAnalysis
         Local, Public, Private, Internal,
     }
 
-    //需要支持的错误
-    //TODO:支持 无效的秩说明符:应为","或"]" CS0178
-
     internal class Parser
     {
         public static List<UsingNode>[] FilesReferences;
@@ -224,11 +221,11 @@ namespace Core.SyntacticAnalysis
                 interfaceDefinition.AccessLevel = AnalysisAccessLevel(Lexer.NextTokenContent);
             _analyzingStructure = interfaceDefinition;
             Lexer.Next();
-            MatchChunk(s_interfaceDefinitionOrder, false, false);
+            MatchChunk(s_interfaceDefinitionOrder, false);
             _analyzingStructure = null;
         }
 
-        private static void MatchFunction(AccessLevel accessLevel, bool isStatic, bool haveDefinition = true)
+        private static void MatchFunction(AccessLevel accessLevel, bool isStatic)
         {
             Lexer.Match(TokenType.Identifer);
             FunctionDefinition function = new FunctionDefinition(Lexer.NextTokenContent, accessLevel, isStatic);
@@ -237,28 +234,30 @@ namespace Core.SyntacticAnalysis
             //参数
             Lexer.MatchNext("(");
             Lexer.Next();
-            while (Lexer.NextTokenContent != ")")
-            {
-                Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
-                DefineVariableNode variable =
-                    MatchDefineVariable(out AssignNode assign, false);
-                function.AddParm(variable);
-                if (Lexer.NextTokenContent == ",") Lexer.Next();
-                else if (Lexer.NextTokenContent != ")") return; //TODO:报错 意外的符号
-            }
+            if (!Lexer.Match(")"))
+                do
+                {
+                    Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
+                    DefineVariableNode variable =
+                        MatchDefineVariable(out AssignNode assign, false);
+                    function.AddParm(variable);
+                    if (Lexer.Match(")")) break;
+                } while (Lexer.MatchNow(","));
+            if(!Lexer.Match(")")) return; //TODO:报错 意外的符号
 
             //返回值
             if (Lexer.MatchNext(":"))
             {
-                if (Lexer.MatchNext(TokenType.Identifer)) //TODO:使用Match函数报错
+                if (Lexer.MatchNext(TokenType.Identifer))
                 {
                     function.ReturnTypeName = Lexer.NextTokenContent;
                     Lexer.Next();
                 }
+                else return; //TODO:使用Match函数报错
             }
             else function.ReturnTypeName = "void";
 
-            if (!haveDefinition)
+            if (_analyzingStructure is InterfaceDefinition)
             {
                 if (Lexer.Match("{")) return; //TODO:报错 接口成员不能有定义
                 Lexer.MatchNow(";"); //TODO:使用Match函数报错
@@ -269,7 +268,7 @@ namespace Core.SyntacticAnalysis
             _analyzingStructure.AddFunction(function);
         }
 
-        private static ChunkNode MatchChunk(OrderType[] order, bool haveAssign = true, bool haveDefinition = true)
+        private static ChunkNode MatchChunk(OrderType[] order, bool haveAssign = true)
         {
             ChunkNode chunk = new ChunkNode();
             bool isMatchOneNode = false;
@@ -294,7 +293,7 @@ namespace Core.SyntacticAnalysis
                             case TokenType.Func:
                                 if (!IsInclude(order, OrderType.Function)) return chunk; //TODO:报错 意外的符号
                                 Lexer.Next();
-                                MatchFunction(accessLevel, isStatic, haveDefinition);
+                                MatchFunction(accessLevel, isStatic);
                                 break;
                             case TokenType.Var:
                                 if (!IsInclude(order, OrderType.DefineVariable))
@@ -309,7 +308,7 @@ namespace Core.SyntacticAnalysis
                     case TokenType.Func:
                         if (!IsInclude(order, OrderType.Function)) return chunk; //TODO:报错 意外的符号
                         Lexer.Next();
-                        MatchFunction(AccessLevel.Private, false, haveDefinition);
+                        MatchFunction(AccessLevel.Private, false);
                         break;
                     case TokenType.Var:
                         if (!IsInclude(order, OrderType.DefineVariable) && !IsInclude(order, OrderType.LocalVariable))
@@ -421,20 +420,23 @@ namespace Core.SyntacticAnalysis
         {
             assign = null;
             bool isArray = false;
+            byte rankNum = 1;
             Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
             string typeName = Lexer.NextTokenContent;
-            Lexer.Next();
-            if (Lexer.Match("["))
+            if (Lexer.MatchNext("["))
             {
-                Lexer.MatchNext("]");
                 Lexer.Next();
+                for (; !Lexer.Match("]"); Lexer.Next())
+                    if (Lexer.Match(",")) rankNum++;
+                    else return null; //TODO:报错 无效的秩说明符:应为","或"]"
+                Lexer.MatchNow("]");
                 isArray = true;
             }
             Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
             string varName = Lexer.NextTokenContent;
             Lexer.Next();
             DefineVariableNode defineVariable =
-                new DefineVariableNode(varName, typeName, accessLevel, isStatic, isArray);
+                new DefineVariableNode(varName, typeName, accessLevel, isStatic, isArray, rankNum);
             if (Lexer.NextTokenContent == ";")
             {
                 Lexer.Next();
@@ -480,28 +482,31 @@ namespace Core.SyntacticAnalysis
 
         private static InvokerNode MatchInvoker(string functionName)
         {
-            Lexer.Next();
             InvokerNode invoker = new InvokerNode(functionName);
-            while (Lexer.NextTokenContent != ")")
-            {
-                //Lexer.Next();
-                invoker.AddParm(MatchExpression());
-                if (Lexer.NextTokenContent != "," && Lexer.NextTokenContent != ")") return invoker; //TODO:报错 意外的符号
-            }
+            Lexer.MatchNow("("); //TODO:使用Match函数报错
+            if (!Lexer.Match(")"))
+                do
+                {
+                    invoker.Parms.Add(MatchExpression());
+                    if (Lexer.Match(")")) break;
+                } while (Lexer.MatchNow(","));
+            Lexer.MatchNow(")"); //TODO:使用Match函数报错
             //分号由调用者处理
-            Lexer.Next();
             return invoker;
         }
 
         private static ArrayNode MatchArray(string name)
         {
-            Lexer.Next();
             ArrayNode array = new ArrayNode
             {
                 Content = name,
                 ElemtntType = ElemtntType.Array,
-                Expression = MatchExpression()
             };
+            Lexer.MatchNow("["); //TODO:使用Match函数报错
+            do
+            {
+                array.Expressions.Add(MatchExpression());
+            } while (Lexer.Match(","));
             Lexer.MatchNow("]"); //TODO:使用Match函数报错
             return array;
         }
@@ -527,7 +532,7 @@ namespace Core.SyntacticAnalysis
                     else
                     {
                         ExpressionNode expression = MatchExpression();
-                        Lexer.Next();
+                        Lexer.MatchNext(";"); //TODO:使用Match函数报错
                         return new CommandNode(CommandType.Return, expression);
                     }
             }
@@ -718,9 +723,7 @@ namespace Core.SyntacticAnalysis
                         name = Lexer.NextTokenContent;
                         Lexer.Next();
                         if (Lexer.NextTokenContent == "(")
-                        {
                             next.NextElement = MatchInvoker(name);
-                        }
                         else if (Lexer.NextTokenContent == "[")
                             next.NextElement = MatchArray(name);
                         else next.NextElement = new ElementNode(ElemtntType.Variable, name);
@@ -736,36 +739,39 @@ namespace Core.SyntacticAnalysis
                     {
                         Lexer.Next();
                         newNode.IsArray = true;
-                        newNode.Expression = MatchExpression();
-                        Lexer.Match("]"); //TODO:使用Match函数报错
-                        return newNode;
+                        do
+                        {
+                            newNode.Parms.Add(MatchExpression());
+                            if (Lexer.Match("]")) break;
+                        } while (Lexer.MatchNow(","));
+                        Lexer.MatchNow("]"); //TODO:使用Match函数报错
                     }
-                    Lexer.Match("("); //TODO:使用Match函数报错
-                    Lexer.Next();
-                    while (Lexer.NextTokenContent != ")")
+                    else
                     {
-                        newNode.AddParm(MatchExpression());
-                        if (Lexer.NextTokenContent != "," && Lexer.NextTokenContent != ")") return newNode; //TODO:报错 意外的符号
+                        Lexer.MatchNow("("); //TODO:使用Match函数报错
+                        if (!Lexer.Match(")"))
+                            do
+                            {
+                                newNode.AddParm(MatchExpression());
+                                if (Lexer.Match(")")) break;
+                            } while (Lexer.MatchNow(","));
+                        Lexer.MatchNow(")"); //TODO:使用Match函数报错
                     }
-                    if (!Lexer.MatchNext(".")) return newNode;
+                    if (!Lexer.Match(".")) return newNode;
                     Lexer.Next();
                     newNode.NextElement = MatchElement();
                     return newNode;
                 case TokenType.Parenthesis:
-                    if (Lexer.NextTokenContent == "(")
+                    if (!Lexer.Match("(")) return null; //TODO:报错 意外的符号
+                    Lexer.Next();
+                    ElementNode expression = new ElementNode
                     {
-                        Lexer.Next();
-                        ElementNode expression = new ElementNode
-                        {
-                            NodeType = NodeType.Element,
-                            ElemtntType = ElemtntType.Expression,
-                            Expression = MatchExpression()
-                        };
-                        Lexer.MatchNow(")"); //TODO:使用Match函数报错
-                        return expression;
-                    }
-                    //TODO:报错 意外的符号
-                    return null;
+                        NodeType = NodeType.Element,
+                        ElemtntType = ElemtntType.Expression,
+                        Expression = MatchExpression()
+                    };
+                    Lexer.MatchNow(")"); //TODO:使用Match函数报错
+                    return expression;
                 default:
                     //TODO:报错 意外的字符
                     return null;

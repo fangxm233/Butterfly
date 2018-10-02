@@ -387,14 +387,20 @@ namespace Core.SemanticAnalysis
                     invoker.Type = invoker.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
                 case ElemtntType.Array:
-                    if (!Symbols.Contain(element.Content)) return; //TODO:报错 当前上文中不存在标识符 ""
-                    DefineVariableNode variableNode = Symbols[element.Content];
+                    ArrayNode array = (ArrayNode) element;
+                    if (!Symbols.Contain(array.Content)) return; //TODO:报错 当前上文中不存在标识符 ""
+                    DefineVariableNode variableNode = Symbols[array.Content];
                     if (_analyzingFunction.IsStatic && !variableNode.IsStatic)
                         return; //TODO:报错 对象引用对于非静态的字段、方法或属性 "" 是必须的
-                    element.Definition = Symbols[element.Content];
-                    element.Type = element.Definition.Type;
-                    if (element.NextElement != null) AnalyzeNextElement(element.NextElement, element.Type);
-                    element.Type = element.LastElement.Type; //由头一个标识符表示整串标识符的类型
+                    array.Definition = Symbols[array.Content];
+                    array.Type = array.Definition.Type;
+                    foreach (ExpressionNode arrayExpression in array.Expressions)
+                    {
+                        AnalyzeExpression(arrayExpression);
+                        if (!Symbols.CanImplicitCast(arrayExpression.Type, Symbols.GetDefinition("int"))) return; //TODO:报错 无法将类型 "" 隐式转换为 ""
+                    }
+                    if (array.NextElement != null) AnalyzeNextElement(array.NextElement, array.Type);
+                    array.Type = array.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
             }
         }
