@@ -14,6 +14,7 @@ public class Program
 		inv CheatPrint(b);
 		var int s = cast<int>'s';
 		var int[,,,,,,,] arr = new int[0,0,0,0,0,0,0,0];
+		var int arri = arr[0,0,0,0,0,0,0,0];
 		for(var int f = 0; i < 100; let i = i + 1;)
 		{
 			if(i == 50) break;

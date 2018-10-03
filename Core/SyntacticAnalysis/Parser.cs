@@ -506,7 +506,8 @@ namespace Core.SyntacticAnalysis
             do
             {
                 array.Expressions.Add(MatchExpression());
-            } while (Lexer.Match(","));
+                if (Lexer.Match("]")) break;
+            } while (Lexer.MatchNow(","));
             Lexer.MatchNow("]"); //TODO:使用Match函数报错
             return array;
         }
