@@ -12,7 +12,9 @@ namespace Core.SyntacticAnalysis
         Function,
         Assign,
         Chunk,
-        Command,
+        Continue,
+        Break,
+        Return,
         DefineVariable,
         LocalVariable,
         DefSpecifier,
@@ -37,19 +39,21 @@ namespace Core.SyntacticAnalysis
         public static List<CustomDefinition>[] FilesDefinitions;
         public static Dictionary<string, DefSpecifierNode>[] FilesAliases;
         public static NameSpaceDefinition RootNameSpace;
-        private static NameSpaceDefinition _endNameSpace;
-        private static CustomDefinition _analyzingStructure;
+        private NameSpaceDefinition _endNameSpace;
+        private CustomDefinition _parsingStructure;
+        private Lexer _lexer;
+        private SyntaxFactory _syntaxFactory;
 
-        private static readonly OrderType[] s_cusDefinitionOrder =  {OrderType.DefineVariable, OrderType.Function};
-        private static readonly OrderType[] s_interfaceDefinitionOrder = { OrderType.Function };
-        private static readonly OrderType[] s_commonOrder =
+        private readonly OrderType[] s_cusDefinitionOrder =  {OrderType.DefineVariable, OrderType.Function};
+        private readonly OrderType[] s_interfaceDefinitionOrder = { OrderType.Function };
+        private readonly OrderType[] s_commonOrder =
         {
             OrderType.DefineVariable, OrderType.Assign, OrderType.If,
             OrderType.While, OrderType.For, OrderType.Chunk,
-            OrderType.Command, OrderType.Invoker, OrderType.New
+            OrderType.Continue, OrderType.Break, OrderType.Return, OrderType.Invoker, OrderType.New
         };
 
-        private static void Init(string outputName)
+        private void Init(string outputName)
         {
             RootNameSpace = new NameSpaceDefinition(outputName);
             _endNameSpace = new NameSpaceDefinition(outputName);
@@ -64,295 +68,334 @@ namespace Core.SyntacticAnalysis
             }
         }
 
-        public static void Match(string outputName)
+        public void Parse(string outputName, Lexer lexer)
         {
+            _lexer = lexer;
+            _syntaxFactory = new SyntaxFactory(this, lexer);
             Init(outputName);
-            while (Lexer.FileIndex < Lexer.FileCount)
+            while (_lexer.FileIndex < Lexer.FileCount)
             {
-                switch (Lexer.NextTokenType)
+                switch (_lexer.NextTokenType)
                 {
-                    case TokenType.Using:
-                        Lexer.Next();
-                        MatchUsing();
+                    case TokenType.UsingKeyword:
+                        _lexer.Next();
+                        ParseUsing();
                         break;
-                    case TokenType.NameSpace:
-                        Lexer.Next();
-                        MatchNameSpace();
+                    case TokenType.NameSpaceKeyword:
+                        _lexer.Next();
+                        ParseNameSpace();
                         break;
-                    case TokenType.Class:
-                        Lexer.Next();
-                        MatchClass(AccessLevel.Private, false);
+                    case TokenType.ClassKeyword:
+                        ParseClass(AccessLevel.Private, false);
                         break;
-                    case TokenType.Struct:
-                        Lexer.Next();
-                        MatchStruct(AccessLevel.Private, false);
+                    case TokenType.StructKeyword:
+                        ParseStruct(AccessLevel.Private);
                         break;
-                    case TokenType.Interface:
-                        Lexer.Next();
-                        MatchInterface(AccessLevel.Private);
+                    case TokenType.InterfaceKeyword:
+                        ParseInterface(AccessLevel.Private);
                         break;
-                    case TokenType.Static:
-                    case TokenType.Public:
-                        AccessLevel accessLevel = MatchAccessLevelAndStatic(out bool isStatic);
-                        switch (Lexer.NextTokenType)
+                    case TokenType.StaticKeyword:
+                    case TokenType.PublicKeyword:
+                        AccessLevel accessLevel = ParseAccessLevelAndStatic(out bool isStatic);
+                        switch (_lexer.NextTokenType)
                         {
-                            case TokenType.Class:
-                                Lexer.Next();
-                                MatchClass(accessLevel, isStatic);
+                            case TokenType.ClassKeyword:
+                                ParseClass(accessLevel, isStatic);
                                 break;
-                            case TokenType.Struct:
-                                Lexer.Next();
-                                MatchStruct(accessLevel, isStatic);
+                            case TokenType.StructKeyword:
+                                ParseStruct(accessLevel);
                                 break;
-                            case TokenType.Interface:
-                                Lexer.Next();
-                                MatchInterface(accessLevel);
+                            case TokenType.InterfaceKeyword:
+                                ParseInterface(accessLevel);
                                 break;
                         }
                         break;
                     default:
                         return; //TODO:报错 意外的符号
                 }
-                if(Lexer.NextTokenType == TokenType.EOF) Console.WriteLine("一个文件编译完成!!");
+                if(_lexer.NextTokenType == TokenType.EOF) Console.WriteLine("一个文件编译完成!!");
             }
         }
 
-        private static void MatchUsing()
+        private void ParseUsing()
         {
-            List<UsingNode> references = FilesReferences[Lexer.FileIndex];
-            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
-            string s = Lexer.NextTokenContent;
-            if (Lexer.MatchNext("="))
+            List<UsingNode> references = FilesReferences[_lexer.FileIndex];
+            Token s = _lexer.Eat(TokenType.Identifer); //TODO:使用Match函数报错
+            if (_lexer.MatchNow("="))
             {
-                Lexer.Next();
-                FilesAliases[Lexer.FileIndex].Add(s, MatchDefinitionSpecifier());
+                FilesAliases[_lexer.FileIndex].Add(s.Content, ParseDefinitionSpecifier());
                 return;
             }
-            references.Add(new UsingNode(s));
+            references.Add(_syntaxFactory.GetUsingNode(s, null));
             UsingNode last = references.Last();
-            while (Lexer.Match("."))
+            while (_lexer.Match("."))
             {
-                Lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
-                last.AddAfter(Lexer.NextTokenContent);
+                _lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
+                last.AddAfter(_lexer.Eat(TokenType.Identifer), _syntaxFactory);
                 last = last.NextUsing;
-                Lexer.Next();
             }
-            Lexer.MatchNow(";"); //TODO:使用Match函数报错
+            _lexer.MatchNow(";"); //TODO:使用Match函数报错
         }
 
-        private static void MatchNameSpace()
+        private void ParseNameSpace()
         {
-            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
-            if (!RootNameSpace.IsContainNameSpace(Lexer.NextTokenContent))
-                RootNameSpace.AddAfter(Lexer.NextTokenContent);
-            NameSpaceDefinition last = RootNameSpace.GetNameSpaceDefinition(Lexer.NextTokenContent);
-            Lexer.Next();
-            while (Lexer.Match("."))
+            _lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
+            if (!RootNameSpace.IsContainNameSpace(_lexer.NextTokenContent))
+                RootNameSpace.AddAfter(_lexer.NextTokenContent);
+            NameSpaceDefinition last = RootNameSpace.GetNameSpaceDefinition(_lexer.NextTokenContent);
+            _lexer.Next();
+            while (_lexer.Match("."))
             {
-                Lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
-                last.AddAfter(Lexer.NextTokenContent);
-                last = last.GetNameSpaceDefinition(Lexer.NextTokenContent);
-                Lexer.Next();
+                _lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
+                last.AddAfter(_lexer.NextTokenContent);
+                last = last.GetNameSpaceDefinition(_lexer.NextTokenContent);
+                _lexer.Next();
             }
             _endNameSpace = last;
-            Lexer.MatchNow(";"); //TODO:使用Match函数报错
+            _lexer.MatchNow(";"); //TODO:使用Match函数报错
         }
 
-        private static void MatchClass(AccessLevel accessLevel, bool isStatic)
+        private void ParseClass(AccessLevel accessLevel, bool isStatic)
         {
-            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
-            ClassDefinition classDefinition =
-                new ClassDefinition(Lexer.NextTokenContent, _endNameSpace, accessLevel, isStatic);
+            Token classKeyword = _lexer.Eat(TokenType.ClassKeyword);
+            Token name = _lexer.Eat(TokenType.Identifer);
             if (accessLevel != AccessLevel.Public)
-                classDefinition.AccessLevel = AnalysisAccessLevel(Lexer.NextTokenContent);
-            if(Lexer.MatchNext(":"))
-                if (Lexer.MatchNext(TokenType.Identifer)) //TODO:使用Match函数报错
-                {
-                    classDefinition.InheritanceName = Lexer.NextTokenContent;
-                    Lexer.Next();
-                }
-                else classDefinition.InheritanceName = "object";
+                accessLevel = AnalysisAccessLevel(name.Content);
+            Token colon = null, inheritanceToken = null;
+            string inheritanceName = "object";
+            if (_lexer.Match(":"))
+            {
+                colon = _lexer.Eat(TokenType.Colon);
+                inheritanceToken = _lexer.Eat(TokenType.Identifer);
+                inheritanceName = inheritanceToken.Content;
+            }
+            ClassDefinition classDefinition =
+                new ClassDefinition(classKeyword, name, colon, inheritanceToken, inheritanceName, _endNameSpace, accessLevel, isStatic);
             _endNameSpace.AddStructure(classDefinition);
-            FilesDefinitions[Lexer.FileIndex].Add(classDefinition);
-            _analyzingStructure = classDefinition;
-            classDefinition.AddFunction(new FunctionDefinition(".ctor", classDefinition.AccessLevel, false));
-            classDefinition.AddFunction(new FunctionDefinition(".cctor", classDefinition.AccessLevel, true));
-            ChunkNode chunk = MatchChunk(s_cusDefinitionOrder);
-            foreach (AnalysisNode analysisNode in chunk.Nodes)
+            FilesDefinitions[_lexer.FileIndex].Add(classDefinition);
+            _parsingStructure = classDefinition;
+            classDefinition.AddFunction(new FunctionDefinition(classDefinition, ".ctor", classDefinition.AccessLevel, false));
+            classDefinition.AddFunction(new FunctionDefinition(classDefinition, ".cctor", classDefinition.AccessLevel, true));
+            ChunkNode chunk = ParseChunk(s_cusDefinitionOrder, out Token openBrace, out Token closeBrace);
+            classDefinition.SetBraces(openBrace, closeBrace);
+            foreach (SyntaxNode analysisNode in chunk.Nodes)
             {
                 if (analysisNode.NodeType == NodeType.Assign)
-                    classDefinition.GetFunctionDefinition(".ctor").ChunkNode.AddNode(analysisNode);
+                    classDefinition.GetFunctionDefinition(".ctor").ChunkNode.AddFirstNode(analysisNode);
                 classDefinition.AddField((DefineVariableNode)analysisNode);
             }
-            _analyzingStructure = null;
+            _parsingStructure = null;
         }
 
-        private static void MatchStruct(AccessLevel accessLevel, bool isStatic)
+        private void ParseStruct(AccessLevel accessLevel)
         {
-            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
-            StructDefinition structDefinition =
-                new StructDefinition(Lexer.NextTokenContent, _endNameSpace, accessLevel, isStatic);
+            Token structKeyword = _lexer.Eat(TokenType.StructKeyword);
+            Token name = _lexer.Eat(TokenType.Identifer);
             if (accessLevel != AccessLevel.Public)
-                structDefinition.AccessLevel = AnalysisAccessLevel(Lexer.NextTokenContent);
-            if (Lexer.MatchNext(":"))
-                if (Lexer.MatchNext(TokenType.Identifer)) //TODO:使用Match函数报错
+                accessLevel = AnalysisAccessLevel(name.Content);
+            Token colon = null, inheritanceToken = null;
+            if (_lexer.Match(":"))
+            {
+                colon = _lexer.Eat(TokenType.Colon);
+                inheritanceToken = _lexer.Eat(TokenType.Identifer);
+            }
+            StructDefinition structDefinition =
+                new StructDefinition(structKeyword, name, colon, inheritanceToken, _endNameSpace, accessLevel);
+            if (accessLevel != AccessLevel.Public)
+                structDefinition.AccessLevel = AnalysisAccessLevel(_lexer.NextTokenContent);
+            if (_lexer.MatchNext(":"))
+                if (_lexer.MatchNext(TokenType.Identifer)) //TODO:使用Match函数报错
                 {
-                    structDefinition.InheritanceName = Lexer.NextTokenContent;
-                    Lexer.Next();
+                    structDefinition.InheritanceName = _lexer.NextTokenContent;
+                    _lexer.Next();
                 }
             _endNameSpace.AddStructure(structDefinition);
-            _analyzingStructure = structDefinition;
-            FilesDefinitions[Lexer.FileIndex].Add(structDefinition);
-            structDefinition.AddFunction(new FunctionDefinition(".ctor", structDefinition.AccessLevel, false));
-            ChunkNode chunk = MatchChunk(s_cusDefinitionOrder);
-            foreach (AnalysisNode analysisNode in chunk.Nodes)
+            _parsingStructure = structDefinition;
+            FilesDefinitions[_lexer.FileIndex].Add(structDefinition);
+            structDefinition.AddFunction(new FunctionDefinition(structDefinition, ".ctor", structDefinition.AccessLevel, false));
+            ChunkNode chunk = ParseChunk(s_cusDefinitionOrder, out Token openBrace, out Token closeBrace);
+            structDefinition.SetBraces(openBrace, closeBrace);
+            foreach (SyntaxNode analysisNode in chunk.Nodes)
                 structDefinition.AddField((DefineVariableNode)analysisNode);
-            _analyzingStructure = null;
+            _parsingStructure = null;
         }
 
-        private static void MatchInterface(AccessLevel accessLevel)
+        private void ParseInterface(AccessLevel accessLevel)
         {
-            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
-            InterfaceDefinition interfaceDefinition =
-                new InterfaceDefinition(Lexer.NextTokenContent, _endNameSpace, accessLevel);
-            _endNameSpace.AddStructure(interfaceDefinition);
-            FilesDefinitions[Lexer.FileIndex].Add(interfaceDefinition);
+            Token interfaceKeyword = _lexer.Eat(TokenType.InterfaceKeyword);
+            Token name = _lexer.Eat(TokenType.Identifer);
             if (accessLevel != AccessLevel.Public)
-                interfaceDefinition.AccessLevel = AnalysisAccessLevel(Lexer.NextTokenContent);
-            _analyzingStructure = interfaceDefinition;
-            Lexer.Next();
-            MatchChunk(s_interfaceDefinitionOrder, false);
-            _analyzingStructure = null;
+                accessLevel = AnalysisAccessLevel(name.Content);
+            Token colon = null, inheritanceToken = null;
+            if (_lexer.Match(":"))
+            {
+                colon = _lexer.Eat(TokenType.Colon);
+                inheritanceToken = _lexer.Eat(TokenType.Identifer);
+            }
+            InterfaceDefinition interfaceDefinition =
+                new InterfaceDefinition(interfaceKeyword, name, colon, inheritanceToken, _endNameSpace, accessLevel);
+            _endNameSpace.AddStructure(interfaceDefinition);
+            FilesDefinitions[_lexer.FileIndex].Add(interfaceDefinition);
+            _parsingStructure = interfaceDefinition;
+            ParseChunk(s_interfaceDefinitionOrder, out Token openBrace, out Token closeBrace);
+            interfaceDefinition.SetBraces(openBrace, closeBrace);
+            _parsingStructure = null;
         }
 
-        private static void MatchFunction(AccessLevel accessLevel, bool isStatic)
+        private void ParseFunction(AccessLevel accessLevel, bool isStatic)
         {
-            Lexer.Match(TokenType.Identifer);
-            FunctionDefinition function = new FunctionDefinition(Lexer.NextTokenContent, accessLevel, isStatic);
-            function.Structure = _analyzingStructure;
+            Token name = _lexer.Eat(TokenType.Identifer);
+            Token openParen = _lexer.Eat(TokenType.OpenParen);
 
             //参数
-            Lexer.MatchNext("(");
-            Lexer.Next();
-            if (!Lexer.Match(")"))
+            List<DefineVariableNode> parms = new List<DefineVariableNode>();
+            if (!_lexer.Match(")"))
                 do
                 {
-                    Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
+                    _lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
                     DefineVariableNode variable =
-                        MatchDefineVariable(out AssignNode assign, false);
-                    function.AddParm(variable);
-                    if (Lexer.Match(")")) break;
-                } while (Lexer.MatchNow(","));
-            if(!Lexer.Match(")")) return; //TODO:报错 意外的符号
+                        ParseDefineVariable(out AssignNode assign, false);
+                    if (assign != null) return; //TODO:报错 没有赋值
+                    parms.Add(variable);
+                    if (_lexer.Match(")")) break;
+                } while (_lexer.MatchNow(","));
+            if (!_lexer.Match(")")) return; //TODO:报错 意外的符号
+            Token closeParen = _lexer.Eat(TokenType.CloseParen);
 
             //返回值
-            if (Lexer.MatchNext(":"))
+            Token colon = null, returnToken = null;
+            string returnName = "void";
+            if (_lexer.Match(":"))
             {
-                if (Lexer.MatchNext(TokenType.Identifer))
+                colon = _lexer.Eat(TokenType.Colon);
+                if (_lexer.Match(TokenType.Identifer))
                 {
-                    function.ReturnTypeName = Lexer.NextTokenContent;
-                    Lexer.Next();
+                    returnToken = _lexer.Eat(TokenType.Identifer);
+                    returnName = returnToken.Content;
                 }
                 else return; //TODO:使用Match函数报错
             }
-            else function.ReturnTypeName = "void";
 
-            if (_analyzingStructure is InterfaceDefinition)
+            FunctionDefinition function;
+            if (_parsingStructure is InterfaceDefinition)
             {
-                if (Lexer.Match("{")) return; //TODO:报错 接口成员不能有定义
-                Lexer.MatchNow(";"); //TODO:使用Match函数报错
+                if (_lexer.Match("{")) return; //TODO:报错 接口成员不能有定义
+                _lexer.MatchNow(";"); //TODO:使用Match函数报错
+                function = new FunctionDefinition(name, openParen, closeParen, colon, returnToken, returnName,
+                    null, null, _parsingStructure, parms, null, accessLevel, false);
+                _parsingStructure.AddFunction(function);
                 return;
             }
-            ChunkNode chunkNode = MatchChunk(s_commonOrder);
-            function.ChunkNode = chunkNode;
-            _analyzingStructure.AddFunction(function);
+            ChunkNode chunkNode = ParseChunk(s_commonOrder, out Token openBrace, out Token closeBrace);
+            function = new FunctionDefinition(name, openParen, closeParen, colon, returnToken, returnName, 
+                openBrace, closeBrace, _parsingStructure, parms, chunkNode, accessLevel, isStatic);
+            _parsingStructure.AddFunction(function);
         }
 
-        private static ChunkNode MatchChunk(OrderType[] order, bool haveAssign = true)
+        private ChunkNode ParseChunk(OrderType[] order)
         {
-            ChunkNode chunk = new ChunkNode();
+            return ParseChunkCore(order, out Token o, out Token c);
+        }
+
+        private ChunkNode ParseChunk(OrderType[] order, out Token openBrace, out Token closeBrace)
+        {
+            return ParseChunkCore(order, out openBrace, out closeBrace);
+        }
+
+        private ChunkNode ParseChunkCore(OrderType[] order, out Token openBrace, out Token closeBrace)
+        {
+            ChunkNode chunk = _syntaxFactory.GetChunkNode();
+            openBrace = null;
+            closeBrace = null;
             bool isMatchOneNode = false;
-            if (Lexer.Match("{"))
-                Lexer.Next();
+            if (_lexer.Match("{"))
+                openBrace = _lexer.Eat(TokenType.OpenBrace);
             else
                 isMatchOneNode = true;
             while (true)
             {
-                if (Lexer.Match("}"))
+                if (_lexer.Match("}"))
                 {
-                    Lexer.Next();
+                    closeBrace = _lexer.Eat(TokenType.CloseBrace);
                     return chunk;
                 }
-                switch (Lexer.NextTokenType)
+                switch (_lexer.NextTokenType)
                 {
-                    case TokenType.Static:
-                    case TokenType.Public:
-                        AccessLevel accessLevel = MatchAccessLevelAndStatic(out bool isStatic);
-                        switch (Lexer.NextTokenType)
+                    case TokenType.StaticKeyword:
+                    case TokenType.PublicKeyword:
+                        AccessLevel accessLevel = ParseAccessLevelAndStatic(out bool isStatic);
+                        switch (_lexer.NextTokenType)
                         {
-                            case TokenType.Func:
+                            case TokenType.FuncKeyword:
                                 if (!IsInclude(order, OrderType.Function)) return chunk; //TODO:报错 意外的符号
-                                Lexer.Next();
-                                MatchFunction(accessLevel, isStatic);
+                                _lexer.Next();
+                                ParseFunction(accessLevel, isStatic);
                                 break;
-                            case TokenType.Var:
+                            case TokenType.VarKeyword:
                                 if (!IsInclude(order, OrderType.DefineVariable))
                                     return chunk; //TODO:报错 意外的符号
-                                Lexer.Next();
-                                chunk.AddNode(MatchDefineVariable(out AssignNode assign1, haveAssign, accessLevel,
-                                    isStatic));
+                                _lexer.Next();
+                                chunk.AddNode(ParseDefineVariable(out AssignNode assign1, true, accessLevel, isStatic));
                                 if (assign1 != null) chunk.AddNode(assign1);
                                 break;
                         }
                         break;
-                    case TokenType.Func:
+                    case TokenType.FuncKeyword:
                         if (!IsInclude(order, OrderType.Function)) return chunk; //TODO:报错 意外的符号
-                        Lexer.Next();
-                        MatchFunction(AccessLevel.Private, false);
+                        _lexer.Next();
+                        ParseFunction(AccessLevel.Private, false);
                         break;
-                    case TokenType.Var:
+                    case TokenType.VarKeyword:
                         if (!IsInclude(order, OrderType.DefineVariable) && !IsInclude(order, OrderType.LocalVariable))
                             return chunk; //TODO:报错 意外的符号
-                        Lexer.Next();
-                        chunk.AddNode(MatchDefineVariable(out AssignNode assign, haveAssign,
+                        _lexer.Next();
+                        chunk.AddNode(ParseDefineVariable(out AssignNode assign, true,
                             IsInclude(order, OrderType.LocalVariable) ? AccessLevel.Local : AccessLevel.Private));
                         if (assign != null) chunk.AddNode(assign);
                         break;
-                    case TokenType.Let:
+                    case TokenType.LetKeyword:
                         if (!IsInclude(order, OrderType.Assign)) return chunk; //TODO:报错 意外的符号
-                        Lexer.Next();
-                        chunk.AddNode(MatchAssign());
+                        _lexer.Next();
+                        chunk.AddNode(ParseAssign());
                         break;
-                    case TokenType.LBraces:
+                    case TokenType.OpenBrace:
                         if (!IsInclude(order, OrderType.Chunk)) return chunk; //TODO:报错 意外的符号
-                        chunk.AddNode(MatchChunk(s_commonOrder));
+                        chunk.AddNode(ParseChunk(s_commonOrder));
                         break;
-                    case TokenType.Command:
-                        if (!IsInclude(order, OrderType.Command)) return chunk; //TODO:报错 意外的符号
-                        chunk.AddNode(MatchCommand());
+                    case TokenType.ContinueKeyword:
+                        if (!IsInclude(order, OrderType.Continue)) return chunk; //TODO:报错 意外的符号
+                        chunk.AddNode(ParseContinue());
                         break;
-                    case TokenType.For:
+                    case TokenType.BreakKeyword:
+                        if (!IsInclude(order, OrderType.Break)) return chunk; //TODO:报错 意外的符号
+                        chunk.AddNode(ParseBreak());
+                        break;
+                    case TokenType.ReturnKeyword:
+                        if (!IsInclude(order, OrderType.Return)) return chunk; //TODO:报错 意外的符号
+                        chunk.AddNode(ParseReturn());
+                        break;
+                    case TokenType.ForKeyword:
                         if (!IsInclude(order, OrderType.For)) return chunk; //TODO:报错 意外的符号
-                        chunk.AddNode(MatchFor());
+                        chunk.AddNode(ParseFor());
                         break;
-                    case TokenType.If:
+                    case TokenType.IfKeyword:
                         if (!IsInclude(order, OrderType.If)) return chunk; //TODO:报错 意外的符号
-                        chunk.AddNode(MatchIf());
+                        chunk.AddNode(ParseIf());
                         break;
-                    case TokenType.Inv:
+                    case TokenType.InvKeyword:
                         if (!IsInclude(order, OrderType.Invoker)) return chunk; //TODO:报错 意外的符号
-                        Lexer.Next();
-                        chunk.AddNode(MatchElement());
-                        Lexer.MatchNow(";"); //TODO:使用Match函数报错
+                        _lexer.Next();
+                        chunk.AddNode(ParseElement());
+                        _lexer.MatchNow(";"); //TODO:使用Match函数报错
                         break;
-                    case TokenType.New:
+                    case TokenType.NewKeyword:
                         if (!IsInclude(order, OrderType.New)) return chunk; //TODO:报错 意外的符号
-                        chunk.AddNode(MatchElement());
-                        Lexer.MatchNow(";"); //TODO:使用Match函数报错
+                        chunk.AddNode(ParseElement());
+                        _lexer.MatchNow(";"); //TODO:使用Match函数报错
                         break;
-                    case TokenType.While:
+                    case TokenType.WhileKeyword:
                         if (!IsInclude(order, OrderType.While)) return chunk; //TODO:报错 意外的符号
-                        chunk.AddNode(MatchWhile());
+                        chunk.AddNode(ParseWhile());
                         break;
                     default:
                         return chunk; //TODO:报错 意外的符号
@@ -361,417 +404,406 @@ namespace Core.SyntacticAnalysis
             }
         }
 
-        private static bool IsInclude(OrderType[] orders, OrderType order) =>
+        private bool IsInclude(OrderType[] orders, OrderType order) =>
             orders.Any(orderType => order == orderType);
 
-        private static AccessLevel MatchAccessLevelAndStatic(out bool isStatic)
+        private AccessLevel ParseAccessLevelAndStatic(out bool isStatic)
         {
-            AccessLevel accessLevel = Lexer.Match(TokenType.Public) ? AccessLevel.Public : AccessLevel.Private;
-            if (accessLevel == AccessLevel.Public) Lexer.Next();
-            isStatic = Lexer.Match(TokenType.Static);
-            if (isStatic) Lexer.Next();
+            AccessLevel accessLevel = _lexer.Match(TokenType.PublicKeyword) ? AccessLevel.Public : AccessLevel.Private;
+            if (accessLevel == AccessLevel.Public) _lexer.Next();
+            isStatic = _lexer.Match(TokenType.StaticKeyword);
+            if (isStatic) _lexer.Next();
             return accessLevel;
         }
 
-        private static IfNode MatchIf()
+        private IfNode ParseIf()
         {
-            Lexer.MatchNow(TokenType.If);
-            Lexer.MatchNow("("); //TODO:使用Match函数报错
-            ExpressionNode expression = MatchExpression();
-            Lexer.MatchNow(")"); //TODO:使用Match函数报错
-            IfNode ifNode = new IfNode(expression);
-            ChunkNode chunkNode = MatchChunk(s_commonOrder);
-            ifNode.Chunk = chunkNode;
-            if (Lexer.Match(TokenType.Else))
+            Token ifKeyword = _lexer.Eat(TokenType.IfKeyword);
+            Token openParen = _lexer.Eat("("); //TODO:使用Match函数报错
+            ExpressionNode expression = ParseExpression();
+            Token closeParen = _lexer.Eat(")"); //TODO:使用Match函数报错
+            ChunkNode chunkNode = ParseChunk(s_commonOrder, out Token openBrace, out Token closeBrace);
+            if (_lexer.Match(TokenType.ElseKeyword))
             {
-                ChunkNode elseChunkNode = MatchChunk(s_commonOrder);
-                ifNode.Else = elseChunkNode;
+                Token elseKeyword = _lexer.Eat(TokenType.ElseKeyword);
+                ChunkNode elseChunkNode = ParseChunk(s_commonOrder, out Token EpenBrace, out Token EcloseBrace);
+                return _syntaxFactory.GetIfNode(ifKeyword, openParen, closeParen, openBrace, closeBrace,
+                    expression, chunkNode, elseKeyword, EpenBrace, EcloseBrace, elseChunkNode);
             }
-            return ifNode;
+            return _syntaxFactory.GetIfNode(ifKeyword, openParen, closeParen, openBrace, closeBrace, expression, chunkNode);
         }
 
-        private static ForNode MatchFor()
+        private ForNode ParseFor()
         {
-            Lexer.MatchNow(TokenType.For);
-            ForNode forNode = new ForNode();
-            Lexer.MatchNow("("); //TODO:使用Match函数报错
-            forNode.Left = MatchChunk(s_commonOrder);
-            forNode.Middle = MatchExpression();
-            Lexer.MatchNow(";"); //TODO:使用Match函数报错
-            forNode.Right = MatchChunk(s_commonOrder);
-            Lexer.MatchNow(")"); //TODO:使用Match函数报错
-            forNode.Chunk = MatchChunk(s_commonOrder);
-            return forNode;
+            Token forKeyword = _lexer.Eat(TokenType.ForKeyword);
+            Token openParen = _lexer.Eat("("); //TODO:使用Match函数报错
+            ChunkNode left = ParseChunk(s_commonOrder);
+            ExpressionNode middle = ParseExpression();
+            _lexer.MatchNow(";"); //TODO:使用Match函数报错
+            ChunkNode right = ParseChunk(s_commonOrder);
+            Token closeParen = _lexer.Eat(")"); //TODO:使用Match函数报错
+            ChunkNode chunk = ParseChunk(s_commonOrder, out Token openBrace, out Token cloceBrace);
+            return _syntaxFactory.GetForNode(forKeyword, openParen, closeParen, openBrace, cloceBrace, left, right, chunk, middle);
         }
 
-        private static WhileNode MatchWhile()
+        private WhileNode ParseWhile()
         {
-            Lexer.MatchNow(TokenType.While);
-            WhileNode whileNode = new WhileNode();
-            Lexer.MatchNow("("); //TODO:使用Match函数报错
-            whileNode.Condition = MatchExpression();
-            Lexer.MatchNow(")"); //TODO:使用Match函数报错
-            whileNode.Chunk = MatchChunk(s_commonOrder);
-            return whileNode;
+            Token whileKeyword = _lexer.Eat(TokenType.WhileKeyword);
+            Token openParen = _lexer.Eat("("); //TODO:使用Match函数报错
+            ExpressionNode condition = ParseExpression();
+            Token closeParen = _lexer.Eat(")"); //TODO:使用Match函数报错
+            ChunkNode chunk = ParseChunk(s_commonOrder, out Token openBrace, out Token closeBrace);
+            return _syntaxFactory.GetWhileNode(whileKeyword, openParen, closeParen, openBrace, closeBrace, condition, chunk);
         }
 
-        private static DefineVariableNode MatchDefineVariable(out AssignNode assign, bool haveAssign = true,
+        private DefineVariableNode ParseDefineVariable(out AssignNode assign, bool haveAssign = true,
             AccessLevel accessLevel = AccessLevel.Local, bool isStatic = false)
         {
             assign = null;
             bool isArray = false;
             byte rankNum = 1;
-            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
-            string typeName = Lexer.NextTokenContent;
-            if (Lexer.MatchNext("["))
+            _lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
+            Token type = _lexer.NextToken;
+            if (_lexer.MatchNext("["))
             {
-                Lexer.Next();
-                for (; !Lexer.Match("]"); Lexer.Next())
-                    if (Lexer.Match(",")) rankNum++;
+                _lexer.Next();
+                for (; !_lexer.Match("]"); _lexer.Next())
+                    if (_lexer.Match(",")) rankNum++;
                     else return null; //TODO:报错 无效的秩说明符:应为","或"]"
-                Lexer.MatchNow("]");
+                _lexer.MatchNow("]");
                 isArray = true;
             }
-            Lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
-            string varName = Lexer.NextTokenContent;
-            Lexer.Next();
-            DefineVariableNode defineVariable =
-                new DefineVariableNode(varName, typeName, accessLevel, isStatic, isArray, rankNum);
-            if (Lexer.NextTokenContent == ";")
+            _lexer.Match(TokenType.Identifer); //TODO:使用Match函数报错
+            Token name = _lexer.NextToken;
+            _lexer.Next();
+            DefineVariableNode defineVariable = _syntaxFactory.GetDefineVariableNode(name, type, accessLevel, isStatic, isArray, rankNum);
+            if (_lexer.NextTokenContent == ";")
             {
-                Lexer.Next();
+                _lexer.Next();
                 return defineVariable;
             }
             if (!haveAssign) return defineVariable;
-            Lexer.Back();
-            assign = MatchAssign();
+            _lexer.Back();
+            assign = ParseAssign();
             return defineVariable;
         }
 
-        private static AssignNode MatchAssign()
+        private AssignNode ParseAssign()
         {
-            AssignNode assign = new AssignNode();
-            assign.Left = MatchElement();
-            string s = Lexer.NextTokenContent;
-            Lexer.MatchNow(TokenType.Assign); //TODO:使用Match函数报错
-            ExpressionNode expression = MatchExpression();
-            if (s != "=")
-                switch (s[0])
+            ElementNode left = ParseElement();
+            Token assignToken = _lexer.Eat(TokenType.Assign); //TODO:使用Match函数报错
+            ExpressionNode expression = ParseExpression();
+            if (assignToken.Content != "=")
+                switch (assignToken.Content[0])
                 {
                     case '+':
-                        assign.Right = new OperateNode(OperateType.Puls, assign.Left, expression);
+                        expression = _syntaxFactory.GetOperateNode(assignToken, OperateType.Plus, left, expression);
                         break;
                     case '-':
-                        assign.Right = new OperateNode(OperateType.Minus, assign.Left, expression);
+                        expression = _syntaxFactory.GetOperateNode(assignToken, OperateType.Minus, left, expression);
                         break;
                     case '*':
-                        assign.Right = new OperateNode(OperateType.Multiply, assign.Left, expression);
+                        expression = _syntaxFactory.GetOperateNode(assignToken, OperateType.Multiply, left, expression);
                         break;
                     case '/':
-                        assign.Right = new OperateNode(OperateType.Divide, assign.Left, expression);
+                        expression = _syntaxFactory.GetOperateNode(assignToken, OperateType.Divide, left, expression);
                         break;
                     case '%':
-                        assign.Right = new OperateNode(OperateType.Modulus, assign.Left, expression);
+                        expression = _syntaxFactory.GetOperateNode(assignToken, OperateType.Modulus, left, expression);
                         break;
                 }
-            else
-                assign.Right = expression;
-            Lexer.MatchNow(";"); //TODO:使用Match函数报错
-            return assign;
+            _lexer.MatchNow(";"); //TODO:使用Match函数报错
+            return _syntaxFactory.GetAssignNode(assignToken, left, expression);
         }
 
-        private static InvokerNode MatchInvoker(string functionName)
+        private InvokerNode ParseInvoker(Token name)
         {
-            InvokerNode invoker = new InvokerNode(functionName);
-            Lexer.MatchNow("("); //TODO:使用Match函数报错
-            if (!Lexer.Match(")"))
+            Token openParen = _lexer.Eat("("); //TODO:使用Match函数报错
+            List<ExpressionNode> parms = new List<ExpressionNode>();
+            if (!_lexer.Match(")"))
                 do
                 {
-                    invoker.Parms.Add(MatchExpression());
-                    if (Lexer.Match(")")) break;
-                } while (Lexer.MatchNow(","));
-            Lexer.MatchNow(")"); //TODO:使用Match函数报错
+                    parms.Add(ParseExpression());
+                    if (_lexer.Match(")")) break;
+                } while (_lexer.MatchNow(","));
+            Token closeParen = _lexer.Eat(")"); //TODO:使用Match函数报错
             //分号由调用者处理
-            return invoker;
+            return _syntaxFactory.GetInvokerNode(name, openParen, closeParen, parms);
         }
 
-        private static ArrayNode MatchArray(string name)
+        private ArrayNode ParseArray(Token name)
         {
-            ArrayNode array = new ArrayNode
-            {
-                Content = name,
-                ElemtntType = ElemtntType.Array,
-            };
-            Lexer.MatchNow("["); //TODO:使用Match函数报错
+            Token openBracket = _lexer.Eat("["); //TODO:使用Match函数报错
+            List<ExpressionNode> expressions = new List<ExpressionNode>();
+            List<Token> commas = new List<Token>();
             do
             {
-                array.Expressions.Add(MatchExpression());
-                if (Lexer.Match("]")) break;
-            } while (Lexer.MatchNow(","));
-            Lexer.MatchNow("]"); //TODO:使用Match函数报错
-            return array;
+                commas.Add(_lexer.Eat(","));
+                expressions.Add(ParseExpression());
+                if (_lexer.Match("]")) break;
+            } while (_lexer.Match(","));
+            Token closeBracket = _lexer.Eat("]"); //TODO:使用Match函数报错
+            return _syntaxFactory.getArrayNode(name, openBracket, closeBracket, expressions, commas);
         }
 
-        private static CommandNode MatchCommand()
+        private ContinueNode ParseContinue()
         {
-            switch (Lexer.NextTokenContent)
+            Token continueKeyword = _lexer.Eat(TokenType.ContinueKeyword);
+            Token semicolon = _lexer.Eat(TokenType.Semicolon);
+            return _syntaxFactory.GetContinueNode(continueKeyword, semicolon);
+        }
+
+        private BreakNode ParseBreak()
+        {
+            Token breakKeyword = _lexer.Eat(TokenType.BreakKeyword);
+            Token semicolon = _lexer.Eat(TokenType.Semicolon);
+            return _syntaxFactory.GetBreakNode(breakKeyword, semicolon);
+        }
+
+        private ReturnNode ParseReturn()
+        {
+            Token returnKeyword = _lexer.Eat(TokenType.ReturnKeyword);
+            if (_lexer.Match(";"))
             {
-                case "continue":
-                    Lexer.MatchNext(";"); //TODO:使用Match函数报错
-                    Lexer.Next();
-                    return new CommandNode(CommandType.Continue);
-                case "break":
-                    Lexer.MatchNext(";"); //TODO:使用Match函数报错
-                    Lexer.Next();
-                    return new CommandNode(CommandType.Break);
-                case "return":
-                    if (Lexer.MatchNext(";"))
-                    {
-                        Lexer.Next();
-                        return new CommandNode(CommandType.Return);
-                    }
-                    else
-                    {
-                        ExpressionNode expression = MatchExpression();
-                        Lexer.MatchNext(";"); //TODO:使用Match函数报错
-                        return new CommandNode(CommandType.Return, expression);
-                    }
+                Token semicolon = _lexer.Eat(TokenType.Semicolon);
+                return _syntaxFactory.GetReturnNode(returnKeyword, semicolon);
             }
-            return null;
+            else
+            {
+                ExpressionNode expression = ParseExpression();
+                Token semicolon = _lexer.Eat(TokenType.Semicolon);
+                return _syntaxFactory.GetReturnNode(returnKeyword, semicolon, expression);
+            }
         }
 
-        private static DefSpecifierNode MatchDefinitionSpecifier()
+        private DefSpecifierNode ParseDefinitionSpecifier()
         {
-            DefSpecifierNode defSpecifier = new DefSpecifierNode(Lexer.NextTokenContent);
+            DefSpecifierNode defSpecifier = _syntaxFactory.GetDefSpecifierNode(_lexer.NextTokenContent);
             DefSpecifierNode next = defSpecifier;
-            Lexer.Next();
-            while (Lexer.NextTokenContent == ".")
+            _lexer.Next();
+            while (_lexer.NextTokenContent == ".")
             {
-                Lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
-                next.NextSpecifier = new DefSpecifierNode(Lexer.NextTokenContent);
+                _lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
+                next.NextSpecifier = _syntaxFactory.GetDefSpecifierNode(_lexer.NextTokenContent);
                 next = next.NextSpecifier;
-                Lexer.Next();
+                _lexer.Next();
             }
             return defSpecifier;
         }
 
-        private static ExpressionNode MatchExpression()
+        private ExpressionNode ParseExpression()
         {
-            ExpressionNode expression = MatchBinary5();
-            while (Lexer.NextTokenContent == "||")
+            ExpressionNode expression = ParseBinary5();
+            while (_lexer.NextTokenContent == "||")
             {
-                Lexer.Next();
-                expression = new OperateNode(OperateType.Or, expression, MatchBinary5());
+                Token op = _lexer.Eat("||");
+                expression = _syntaxFactory.GetOperateNode(op, OperateType.Or, expression, ParseBinary5());
             }
             return expression;
         }
-        private static ExpressionNode MatchBinary5()
+        private ExpressionNode ParseBinary5()
         {
-            ExpressionNode expression = MatchBinary4();
-            while (Lexer.NextTokenContent == "&&")
+            ExpressionNode expression = ParseBinary4();
+            while (_lexer.NextTokenContent == "&&")
             {
-                Lexer.Next();
-                expression = new OperateNode(OperateType.And, expression, MatchBinary4());
+                Token op = _lexer.Eat("&&");
+                expression = _syntaxFactory.GetOperateNode(op, OperateType.And, expression, ParseBinary4());
             }
             return expression;
         }
-        private static ExpressionNode MatchBinary4()
+        private ExpressionNode ParseBinary4()
         {
-            ExpressionNode expression = MatchBinary3();
-            while (Lexer.NextTokenContent == "==" || Lexer.NextTokenContent == "!=")
+            ExpressionNode expression = ParseBinary3();
+            while (_lexer.NextTokenContent == "==" || _lexer.NextTokenContent == "!=")
             {
-                string s = Lexer.NextTokenContent;
-                Lexer.Next();
+                string s = _lexer.NextTokenContent;
+                Token op;
                 switch (s)
                 {
                     case "==":
-                        expression = new OperateNode(OperateType.Equal, expression, MatchBinary3());
+                        op = _lexer.Eat("==");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.Equal, expression, ParseBinary3());
                         break;
                     case "!=":
-                        expression = new OperateNode(OperateType.NotEqual, expression, MatchBinary3());
+                        op = _lexer.Eat("||");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.NotEqual, expression, ParseBinary3());
                         break;
                 }
             }
             return expression;
         }
-        private static ExpressionNode MatchBinary3()
+        private ExpressionNode ParseBinary3()
         {
-            ExpressionNode expression = MatchBinary2();
-            while (Lexer.NextTokenContent == ">" || Lexer.NextTokenContent == ">=" || 
-                   Lexer.NextTokenContent == "<" || Lexer.NextTokenContent == "<=")
+            ExpressionNode expression = ParseBinary2();
+            while (_lexer.NextTokenContent == ">" || _lexer.NextTokenContent == ">=" || 
+                   _lexer.NextTokenContent == "<" || _lexer.NextTokenContent == "<=")
             {
-                string s = Lexer.NextTokenContent;
-                Lexer.Next();
+                string s = _lexer.NextTokenContent;
+                Token op;
                 switch (s)
                 {
                     case ">":
-                        expression = new OperateNode(OperateType.Greater, expression, MatchBinary2());
+                        op = _lexer.Eat(">");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.Greater, expression, ParseBinary2());
                         break;
                     case ">=":
-                        expression = new OperateNode(OperateType.GreaterEqual, expression, MatchBinary2());
+                        op = _lexer.Eat(">=");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.GreaterEqual, expression, ParseBinary2());
                         break;
                     case "<":
-                        expression = new OperateNode(OperateType.Less, expression, MatchBinary2());
+                        op = _lexer.Eat("<");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.Less, expression, ParseBinary2());
                         break;
                     case "<=":
-                        expression = new OperateNode(OperateType.LessEqual, expression, MatchBinary2());
+                        op = _lexer.Eat("<=");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.LessEqual, expression, ParseBinary2());
                         break;
                 }
             }
             return expression;
         }
-        private static ExpressionNode MatchBinary2()
+        private ExpressionNode ParseBinary2()
         {
-            ExpressionNode expression = MatchBinary1();
-            while (Lexer.NextTokenContent == "+" || Lexer.NextTokenContent == "-")
+            ExpressionNode expression = ParseBinary1();
+            while (_lexer.NextTokenContent == "+" || _lexer.NextTokenContent == "-")
             {
-                string s = Lexer.NextTokenContent;
-                Lexer.Next();
+                string s = _lexer.NextTokenContent;
+                Token op;
                 switch (s)
                 {
                     case "+":
-                        expression = new OperateNode(OperateType.Puls, expression, MatchBinary1());
+                        op = _lexer.Eat("+");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.Plus, expression, ParseBinary1());
                         break;
                     case "-":
-                        expression = new OperateNode(OperateType.Minus, expression, MatchBinary1());
+                        op = _lexer.Eat("-");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.Minus, expression, ParseBinary1());
                         break;
                 }
             }
             return expression;
         }
-        private static ExpressionNode MatchBinary1()
+        private ExpressionNode ParseBinary1()
         {
-            ExpressionNode expression = MatchUnary();
-            while (Lexer.NextTokenContent == "*" || Lexer.NextTokenContent == "/" || Lexer.NextTokenContent == "%")
+            ExpressionNode expression = ParseUnary();
+            while (_lexer.NextTokenContent == "*" || _lexer.NextTokenContent == "/" || _lexer.NextTokenContent == "%")
             {
-                string s = Lexer.NextTokenContent;
-                Lexer.Next();
+                string s = _lexer.NextTokenContent;
+                Token op;
                 switch (s)
                 {
                     case "*":
-                        expression = new OperateNode(OperateType.Multiply, expression, MatchUnary());
+                        op = _lexer.Eat("*");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.Multiply, expression, ParseUnary());
                         break;
                     case "/":
-                        expression = new OperateNode(OperateType.Divide, expression, MatchUnary());
+                        op = _lexer.Eat("/");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.Divide, expression, ParseUnary());
                         break;
                     case "%":
-                        expression = new OperateNode(OperateType.Modulus, expression, MatchUnary());
+                        op = _lexer.Eat("%");
+                        expression = _syntaxFactory.GetOperateNode(op, OperateType.Modulus, expression, ParseUnary());
                         break;
                 }
             }
             return expression;
         }
-        private static ExpressionNode MatchUnary()
+        private ExpressionNode ParseUnary()
         {
-            switch (Lexer.NextTokenContent)
+            switch (_lexer.NextTokenContent)
             {
                 case "-":
-                    Lexer.Next();
-                    return new OperateNode(OperateType.UMinus, MatchElement());
+                    return _syntaxFactory.GetOperateNode(_lexer.Eat("-"), OperateType.UMinus, ParseElement());
                 case "!":
-                    Lexer.Next();
-                    return new OperateNode(OperateType.Not, MatchElement());
+                    return _syntaxFactory.GetOperateNode(_lexer.Eat("!"), OperateType.Not, ParseElement());
                 case "cast":
-                    Lexer.MatchNext("<"); //TODO:使用Match函数报错
-                    Lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
-                    string s = Lexer.NextTokenContent;
-                    Lexer.MatchNext(">"); //TODO:使用Match函数报错
-                    Lexer.Next();
-                    return new OperateNode(s, MatchElement());
+                    Token op = _lexer.Eat(TokenType.CastKeyword);
+                    _lexer.MatchNow("<"); //TODO:使用Match函数报错
+                    Token t = _lexer.Eat(TokenType.Identifer); //TODO:使用Match函数报错
+                    _lexer.MatchNow(">"); //TODO:使用Match函数报错
+                    return _syntaxFactory.GetOperateNode(op, t.Content, ParseElement());
                 default:
-                    return MatchElement();
+                    return ParseElement();
             }
         }
-        private static ElementNode MatchElement() //TODO:添加++，--的支持
+        private ElementNode ParseElement() //TODO:添加++，--的支持
         {
-            switch (Lexer.NextTokenType)
+            switch (_lexer.NextTokenType)
             {
-                case TokenType.True:
-                    Lexer.Next();
-                    return new ElementNode(ElemtntType.Boolean, "true");
-                case TokenType.False:
-                    Lexer.Next();
-                    return new ElementNode(ElemtntType.Boolean, "false");
-                case TokenType.Number:
-                    string n = Lexer.NextTokenContent;
-                    Lexer.Next();
-                    return new ElementNode(ElemtntType.Integer, n);
-                case TokenType.Float:
-                    string f = Lexer.NextTokenContent;
-                    Lexer.Next();
-                    return new ElementNode(ElemtntType.Float, f);
-                case TokenType.Char:
-                    string c = Lexer.NextTokenContent;
-                    Lexer.Next();
-                    return new ElementNode(ElemtntType.Char, c);
-                case TokenType.String:
-                    string s = Lexer.NextTokenContent;
-                    Lexer.Next();
-                    return new ElementNode(ElemtntType.String, s);
+                case TokenType.TrueKeyword:
+                    return _syntaxFactory.GetElementNode(NodeType.BooleanLiteral, _lexer.Eat(TokenType.TrueKeyword));
+                case TokenType.FalseKeyword:
+                    return _syntaxFactory.GetElementNode(NodeType.BooleanLiteral, _lexer.Eat(TokenType.FalseKeyword));
+                case TokenType.NumericLiteralToken:
+                    return _syntaxFactory.GetElementNode(NodeType.NumericLiteral, _lexer.Eat(TokenType.NumericLiteralToken));
+                case TokenType.FloatLiteralToken:
+                    return _syntaxFactory.GetElementNode(NodeType.FloatLiteral, _lexer.Eat(TokenType.FloatLiteralToken));
+                case TokenType.CharacterLiteralToken:
+                    return _syntaxFactory.GetElementNode(NodeType.CharacterLiteral, _lexer.Eat(TokenType.CharacterLiteralToken));
+                case TokenType.StringLiteralToken:
+                    return _syntaxFactory.GetElementNode(NodeType.StringLiteral, _lexer.Eat(TokenType.StringLiteralToken));
                 case TokenType.Identifer:
-                    string name = Lexer.NextTokenContent;
-                    Lexer.Next();
+                    Token name = _lexer.NextToken;
+                    _lexer.Next();
                     ElementNode element;
-                    if (Lexer.NextTokenContent == "(")
-                        element = MatchInvoker(name);
-                    else if (Lexer.NextTokenContent == "[")
-                        element = MatchArray(name);
-                    else element = new ElementNode(ElemtntType.Variable, name);
+                    if (_lexer.NextTokenContent == "(")
+                        element = ParseInvoker(name);
+                    else if (_lexer.NextTokenContent == "[")
+                        element = ParseArray(name);
+                    else element = _syntaxFactory.GetElementNode(NodeType.Variable, name);
                     ElementNode next = element;
-                    while (Lexer.NextTokenContent == ".")
+                    while (_lexer.NextTokenContent == ".")
                     {
-                        Lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
-                        name = Lexer.NextTokenContent;
-                        Lexer.Next();
-                        if (Lexer.NextTokenContent == "(")
-                            next.NextElement = MatchInvoker(name);
-                        else if (Lexer.NextTokenContent == "[")
-                            next.NextElement = MatchArray(name);
-                        else next.NextElement = new ElementNode(ElemtntType.Variable, name);
+                        _lexer.MatchNext(TokenType.Identifer); //TODO:使用Match函数报错
+                        name = _lexer.NextToken;
+                        _lexer.Next();
+                        if (_lexer.NextTokenContent == "(")
+                            next.NextElement = ParseInvoker(name);
+                        else if (_lexer.NextTokenContent == "[")
+                            next.NextElement = ParseArray(name);
+                        else next.NextElement = _syntaxFactory.GetElementNode(NodeType.Variable, name);
                         next = next.NextElement;
                     }
                     return element;
-                case TokenType.New:
-                    NewNode newNode = new NewNode();
-                    Lexer.MatchNext(TokenType.Identifer);
-                    newNode.TypeName = Lexer.NextTokenContent;
-                    Lexer.Next();
-                    if (Lexer.Match("["))
+                case TokenType.NewKeyword:
+                    Token newKeyword = _lexer.Eat(TokenType.NewKeyword);
+                    Token typeName = _lexer.Eat(TokenType.Identifer);
+                    Token openParen = null, closeParen = null;
+                    bool isArray = false;
+                    List<ExpressionNode> parms = new List<ExpressionNode>();
+                    //_lexer.Next();
+                    if (_lexer.Match("["))
                     {
-                        Lexer.Next();
-                        newNode.IsArray = true;
+                        openParen = _lexer.Eat(TokenType.OpenBracket);
+                        isArray = true;
                         do
                         {
-                            newNode.Parms.Add(MatchExpression());
-                            if (Lexer.Match("]")) break;
-                        } while (Lexer.MatchNow(","));
-                        Lexer.MatchNow("]"); //TODO:使用Match函数报错
+                            parms.Add(ParseExpression());
+                            if (_lexer.Match("]")) break;
+                        } while (_lexer.MatchNow(","));
+                        closeParen = _lexer.Eat(TokenType.CloseBracket); //TODO:使用Match函数报错
                     }
                     else
                     {
-                        Lexer.MatchNow("("); //TODO:使用Match函数报错
-                        if (!Lexer.Match(")"))
+                        openParen = _lexer.Eat(TokenType.OpenParen); //TODO:使用Match函数报错
+                        if (!_lexer.Match(")"))
                             do
                             {
-                                newNode.AddParm(MatchExpression());
-                                if (Lexer.Match(")")) break;
-                            } while (Lexer.MatchNow(","));
-                        Lexer.MatchNow(")"); //TODO:使用Match函数报错
+                                parms.Add(ParseExpression());
+                                if (_lexer.Match(")")) break;
+                            } while (_lexer.MatchNow(","));
+                        closeParen = _lexer.Eat(TokenType.CloseParen); //TODO:使用Match函数报错
                     }
-                    if (!Lexer.Match(".")) return newNode;
-                    Lexer.Next();
-                    newNode.NextElement = MatchElement();
+                    NewNode newNode = _syntaxFactory.GetNewNode(newKeyword, typeName, openParen, closeParen, parms, isArray);
+                    if (!_lexer.Match(".")) return newNode;
+                    _lexer.Next();
+                    newNode.NextElement = ParseElement();
                     return newNode;
-                case TokenType.Parenthesis:
-                    if (!Lexer.Match("(")) return null; //TODO:报错 意外的符号
-                    Lexer.Next();
-                    ElementNode expression = new ElementNode
-                    {
-                        NodeType = NodeType.Element,
-                        ElemtntType = ElemtntType.Expression,
-                        Expression = MatchExpression()
-                    };
-                    Lexer.MatchNow(")"); //TODO:使用Match函数报错
+                case TokenType.OpenParen:
+                    if (!_lexer.Match("(")) return null; //TODO:报错 意外的符号
+                    _lexer.Next();
+                    ElementNode expression = new ElementNode(NodeType.Expression, ParseExpression());
+                    _lexer.MatchNow(")"); //TODO:使用Match函数报错
                     return expression;
                 default:
                     //TODO:报错 意外的字符
@@ -779,7 +811,7 @@ namespace Core.SyntacticAnalysis
             }
         }
 
-        private static AccessLevel AnalysisAccessLevel(string name)
+        private AccessLevel AnalysisAccessLevel(string name)
         {
             char c = name[0];
             if (c == '_') return AccessLevel.Private;

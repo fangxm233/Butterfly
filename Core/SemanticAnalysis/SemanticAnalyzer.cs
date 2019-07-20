@@ -1,9 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using Core.LexicalAnalysis;
+﻿using Core.LexicalAnalysis;
 using Core.SyntacticAnalysis;
 using Core.SyntacticAnalysis.Definitions;
 using Core.SyntacticAnalysis.Nodes;
+using System.Collections.Generic;
 
 namespace Core.SemanticAnalysis
 {
@@ -31,13 +30,13 @@ namespace Core.SemanticAnalysis
 
     public class SemanticAnalyzer
     {
-        internal static readonly SymbolManager Symbols = new SymbolManager();
-        private static int _fileIndex;
-        private static CustomDefinition _analyzingStructure;
-        private static FunctionDefinition _analyzingFunction;
-        private static readonly Stack<AnalysisNode> s_loopStack = new Stack<AnalysisNode>();
+        internal readonly SymbolManager Symbols = new SymbolManager();
+        private int _fileIndex;
+        private CustomDefinition _analyzingStructure;
+        private FunctionDefinition _analyzingFunction;
+        private readonly Stack<SyntaxNode> s_loopStack = new Stack<SyntaxNode>();
 
-        public static void Analyze()
+        public void Analyze()
         {
             for (; _fileIndex < Lexer.FileCount; _fileIndex++)
                 GenerateMetadata(_fileIndex);
@@ -54,7 +53,7 @@ namespace Core.SemanticAnalysis
             }
         }
 
-        private static void GenerateMetadata(int fileIndex)
+        private void GenerateMetadata(int fileIndex)
         {
             foreach (UsingNode usingNode in Parser.FilesReferences[fileIndex])
             {
@@ -74,7 +73,7 @@ namespace Core.SemanticAnalysis
             Symbols.Clear();
         }
 
-        //private static void GenerateStructureMetadata(CustomDefinition definition)
+        //private void GenerateStructureMetadata(CustomDefinition definition)
         //{
         //    if (definition is ClassDefinition classDefinition) GenerateClassMetadata(classDefinition);
         //    if (definition is StructDefinition structDefinition) GenerateStructMetadata(structDefinition);
@@ -82,19 +81,19 @@ namespace Core.SemanticAnalysis
         //        GenerateFuncMetadata(function.Value);
         //}
 
-        private static void GenerateClassMetadata(ClassDefinition definition)
+        private void GenerateClassMetadata(ClassDefinition definition)
         {
             foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
                 AnalyzeVarDef(field.Value, false);
         }
 
-        private static void GenerateStructMetadata(StructDefinition definition)
+        private void GenerateStructMetadata(StructDefinition definition)
         {
             foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
                 AnalyzeVarDef(field.Value, false);
         }
 
-        private static void GenerateFuncMetadata(FunctionDefinition function)
+        private void GenerateFuncMetadata(FunctionDefinition function)
         {
             foreach (DefineVariableNode defineVariableNode in function.ParmDefinition)
                 AnalyzeVarDef(defineVariableNode, false);
@@ -102,7 +101,7 @@ namespace Core.SemanticAnalysis
             if (function.ReturnType == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
         }
 
-        private static void AnalyzeStructure(CustomDefinition definition)
+        private void AnalyzeStructure(CustomDefinition definition)
         {
             _analyzingStructure = definition;
             Symbols.PushList();
@@ -112,7 +111,7 @@ namespace Core.SemanticAnalysis
             _analyzingStructure = null;
         }
 
-        private static void AnalyzeClass(ClassDefinition definition)
+        private void AnalyzeClass(ClassDefinition definition)
         {
             foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
                 AnalyzeVarDef(field.Value);
@@ -120,7 +119,7 @@ namespace Core.SemanticAnalysis
                 AnalyzeFunction(function.Value);
         }
 
-        private static void AnalyzeStrurt(StructDefinition definition)
+        private void AnalyzeStrurt(StructDefinition definition)
         {
             foreach (KeyValuePair<string, DefineVariableNode> field in definition.ContainFields)
                 AnalyzeVarDef(field.Value);
@@ -128,7 +127,7 @@ namespace Core.SemanticAnalysis
                 AnalyzeFunction(function.Value);
         }
 
-        private static void AnalyzeUsing(UsingNode usingNode)
+        private void AnalyzeUsing(UsingNode usingNode)
         {
             for (NameSpaceDefinition nameSpace = Parser.RootNameSpace;
                 usingNode.NextUsing != null;
@@ -139,7 +138,7 @@ namespace Core.SemanticAnalysis
             }
         }
 
-        private static void AnalyzeFunction(FunctionDefinition function)
+        private void AnalyzeFunction(FunctionDefinition function)
         {
             _analyzingFunction = function;
             Symbols.PushList();
@@ -151,7 +150,7 @@ namespace Core.SemanticAnalysis
             _analyzingFunction = null;
         }
 
-        private static void AnalyzeVarDef(DefineVariableNode variable, bool shouldPush = true)
+        private void AnalyzeVarDef(DefineVariableNode variable, bool shouldPush = true)
         {
             if (shouldPush) Symbols.Push(variable);
             if (variable.Type != null) return;
@@ -159,60 +158,68 @@ namespace Core.SemanticAnalysis
             if (variable.Type == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
         }
 
-        private static void AnalyzeChunk(ChunkNode chunk, bool newList = true)
+        private void AnalyzeChunk(ChunkNode chunk, bool newList = true)
         {
             if(newList)Symbols.PushList();
-            foreach (AnalysisNode analysisNode in chunk.Nodes)
+            foreach (SyntaxNode analysisNode in chunk.Nodes)
             {
-                switch (analysisNode)
+                switch (analysisNode.NodeType)
                 {
-                    case AssignNode assignNode:
-                        AnalyzeAssign(assignNode);
+                    case NodeType.Assign:
+                        AnalyzeAssign((AssignNode)analysisNode);
                         break;
-                    case CommandNode commandNode:
-                        AnalyzeCommand(commandNode);
+                    case NodeType.Continue:
+                        AnalyzeContinue((ContinueNode)analysisNode);
                         break;
-                    case DefineVariableNode defineVariableNode:
-                        AnalyzeVarDef(defineVariableNode);
+                    case NodeType.Break:
+                        AnalyzeBreak((BreakNode)analysisNode);
                         break;
-                    case InvokerNode invokerNode:
+                    case NodeType.Return:
+                        AnalyzeReturn((ReturnNode)analysisNode);
+                        break;
+                    case NodeType.DefineVariable:
+                        AnalyzeVarDef((DefineVariableNode)analysisNode);
+                        break;
+                    case NodeType.Invoker:
+                        InvokerNode invokerNode = (InvokerNode)analysisNode;
                         AnalyzeElement(invokerNode);
-                        if (invokerNode.GetLastElement().ElemtntType != ElemtntType.Invoker)
+                        if (invokerNode.GetLastElement().NodeType != NodeType.Invoker)
                             return; //TODO:报错 只有assignment、invoker 和 new 对象表达式可用作语句
                         break;
-                    case NewNode newNode:
+                    case NodeType.New:
+                        NewNode newNode = (NewNode)analysisNode;
                         AnalyzeElement(newNode);
-                        switch (newNode.GetLastElement().ElemtntType)
+                        switch (newNode.GetLastElement().NodeType)
                         {
-                            case ElemtntType.New:
-                            case ElemtntType.Invoker:
+                            case NodeType.New:
+                            case NodeType.Invoker:
                                 break;
                             default:
                                 return; //TODO:报错 只有assignment、invoker 和 new 对象表达式可用作语句
                         }
                         break;
-                    case IfNode ifNode:
-                        AnalyzeIf(ifNode);
+                    case NodeType.If:
+                        AnalyzeIf((IfNode)analysisNode);
                         break;
-                    case ForNode forNode:
-                        AnalyzeForNode(forNode);
+                    case NodeType.For:
+                        AnalyzeForNode((ForNode)analysisNode);
                         break;
-                    case WhileNode whileNode:
-                        AnalyzeWhileNode(whileNode);
+                    case NodeType.While:
+                        AnalyzeWhileNode((WhileNode)analysisNode);
                         break;
                 }
             }
             if (newList)Symbols.PopList();
         }
 
-        private static void AnalyzeIf(IfNode ifNode)
+        private void AnalyzeIf(IfNode ifNode)
         {
             AnalyzeExpression(ifNode.Condition);
             AnalyzeChunk(ifNode.Chunk);
-            if (ifNode.Else != null) AnalyzeChunk(ifNode.Else);
+            if (ifNode.ElseChunk != null) AnalyzeChunk(ifNode.ElseChunk);
         }
 
-        private static void AnalyzeForNode(ForNode forNode)
+        private void AnalyzeForNode(ForNode forNode)
         {
             Symbols.PushList();
             s_loopStack.Push(forNode);
@@ -224,7 +231,7 @@ namespace Core.SemanticAnalysis
             Symbols.PopList();
         }
 
-        private static void AnalyzeWhileNode(WhileNode whileNode)
+        private void AnalyzeWhileNode(WhileNode whileNode)
         {
             s_loopStack.Push(whileNode);
             AnalyzeExpression(whileNode.Condition);
@@ -232,7 +239,7 @@ namespace Core.SemanticAnalysis
             s_loopStack.Pop();
         }
 
-        private static void AnalyzeAssign(AssignNode assignNode)
+        private void AnalyzeAssign(AssignNode assignNode)
         {
             AnalyzeExpression(assignNode.Left);
             AnalyzeExpression(assignNode.Right);
@@ -240,29 +247,47 @@ namespace Core.SemanticAnalysis
             //TODO:报错 无法将类型 "" 隐式转换为 ""
         }
 
-        private static void AnalyzeCommand(CommandNode commandNode)
+        private void AnalyzeContinue(ContinueNode continueNode)
         {
-            if (commandNode.Type == CommandType.Return)
-            {
-                commandNode.Function = _analyzingFunction;
-                if (commandNode.Expression == null && _analyzingFunction.ReturnTypeName == "void") return;
-                if (commandNode.Expression == null) return; //TODO:报错 需要一个类型可转换为 "" 的对象
-                if (commandNode.Expression != null && _analyzingFunction.ReturnTypeName == "void") return; //TODO:报错 由于 "" 返回 void,返回关键字后面不得有对象表达式
-                AnalyzeExpression(commandNode.Expression);
-                if (!Symbols.CanImplicitCast(commandNode.Expression.Type, _analyzingFunction.ReturnType)) return; //TODO:报错 无法将类型 "" 隐式转换为 ""
-                return;
-            }
             if (s_loopStack.Count == 0) return; //TODO:报错 没有要中断或继续的封闭循环
-            AnalysisNode loop = s_loopStack.Peek();
+            continueNode.Loop = s_loopStack.Peek();
         }
 
-        private static void AnalyzeExpression(ExpressionNode expression)
+        private void AnalyzeBreak(BreakNode breakNode)
+        {
+            if (s_loopStack.Count == 0) return; //TODO:报错 没有要中断或继续的封闭循环
+            breakNode.Loop = s_loopStack.Peek();
+        }
+
+        private void AnalyzeReturn(ReturnNode returnNode)
+        {
+            returnNode.Function = _analyzingFunction;
+            if (returnNode.Expression == null && _analyzingFunction.ReturnTypeName == "void") return;
+            if (returnNode.Expression == null) return; //TODO:报错 需要一个类型可转换为 "" 的对象
+            if (returnNode.Expression != null && _analyzingFunction.ReturnTypeName == "void") return; //TODO:报错 由于 "" 返回 void,返回关键字后面不得有对象表达式
+            AnalyzeExpression(returnNode.Expression);
+            if (!Symbols.CanImplicitCast(returnNode.Expression.Type, _analyzingFunction.ReturnType)) return; //TODO:报错 无法将类型 "" 隐式转换为 ""
+        }
+
+        private void AnalyzeExpression(ExpressionNode expression)
         {
             if (expression.NodeType == NodeType.Operate) AnalyzeOperate((OperateNode) expression);
-            if (expression.NodeType == NodeType.Element) AnalyzeElement((ElementNode) expression);
+            if (IsElement(expression.NodeType)) AnalyzeElement((ElementNode) expression);
         }
 
-        private static void AnalyzeOperate(OperateNode operate)
+        private bool IsElement(NodeType nodeType)
+        {
+            return nodeType == NodeType.Expression || nodeType == NodeType.CustomType
+                || nodeType == NodeType.NumericLiteral || nodeType == NodeType.FloatLiteral
+                || nodeType == NodeType.StringLiteral || nodeType == NodeType.CharacterLiteral
+                || nodeType == NodeType.BooleanLiteral || nodeType == NodeType.Variable
+                || nodeType == NodeType.Invoker || nodeType == NodeType.Array
+                || nodeType == NodeType.New || nodeType == NodeType.This
+                || nodeType == NodeType.Null;
+
+        }
+
+        private void AnalyzeOperate(OperateNode operate)
         {
             switch (operate.OperateType)
             {
@@ -285,7 +310,7 @@ namespace Core.SemanticAnalysis
                 case OperateType.Multiply:
                 case OperateType.Divide:
                 case OperateType.Modulus:
-                case OperateType.Puls:
+                case OperateType.Plus:
                 case OperateType.Minus:
                     AnalyzeExpression(operate.Left);
                     AnalyzeExpression(operate.Right);
@@ -316,32 +341,32 @@ namespace Core.SemanticAnalysis
             }
         }
 
-        private static void AnalyzeElement(ElementNode element) //写的不好
+        private void AnalyzeElement(ElementNode element) //写的不好
         {
-            switch (element.ElemtntType)
+            switch (element.NodeType)
             {
-                case ElemtntType.Unknown:
+                case NodeType.Unknown:
                     return; //TODO:报错 未知错误
-                case ElemtntType.Expression:
+                case NodeType.Expression:
                     AnalyzeExpression(element.Expression);
                     element.Type = element.Expression.Type;
                     break;
-                case ElemtntType.Integer:
+                case NodeType.NumericLiteral:
                     element.Type = Symbols.GetDefinition("int");
                     break;
-                case ElemtntType.Float:
+                case NodeType.FloatLiteral:
                     element.Type = Symbols.GetDefinition("float");
                     break;
-                case ElemtntType.String:
+                case NodeType.StringLiteral:
                     element.Type = Symbols.GetDefinition("string");
                     break;
-                case ElemtntType.Char:
+                case NodeType.CharacterLiteral:
                     element.Type = Symbols.GetDefinition("char");
                     break;
-                case ElemtntType.Boolean:
+                case NodeType.BooleanLiteral:
                     element.Type = Symbols.GetDefinition("bool");
                     break;
-                case ElemtntType.New:
+                case NodeType.New:
                     NewNode newNode = (NewNode)element;
                     foreach (ExpressionNode expressionNode in newNode.Parms)
                         AnalyzeExpression(expressionNode);
@@ -353,7 +378,7 @@ namespace Core.SemanticAnalysis
                     if (newNode.NextElement != null) AnalyzeNextElement(newNode.NextElement, element.Type);
                     newNode.Type = newNode.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
-                case ElemtntType.Variable:
+                case NodeType.Variable:
                     if (Symbols.Contain(element.Content)) //处理标识符表示对象的情况
                     {
                         DefineVariableNode variable = Symbols[element.Content];
@@ -368,13 +393,13 @@ namespace Core.SemanticAnalysis
                     //处理标识符表示类型名字的情况
                     CustomDefinition definition = Symbols.GetDefinition(element.Content);
                     if (definition == null) return; //TODO:报错 未能找到类型或命名空间名称 ""（是否缺少 using 指令或程序集引用？）
-                    element.ElemtntType = ElemtntType.CustomType;
+                    element.NodeType = NodeType.CustomType;
                     element.Type = definition;
                     if (element.NextElement == null) return; //TODO:报错 "" 是个类型，在给定的上下文中无效
                     AnalyzeNextElement(element.NextElement, element.Type, true);
                     element.Type = element.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
-                case ElemtntType.Invoker:
+                case NodeType.Invoker:
                     InvokerNode invoker = (InvokerNode) element;
                     foreach (ExpressionNode expressionNode in invoker.Parms)
                         AnalyzeExpression(expressionNode);
@@ -386,7 +411,7 @@ namespace Core.SemanticAnalysis
                     if (invoker.NextElement != null) AnalyzeNextElement(invoker.NextElement, element.Type);
                     invoker.Type = invoker.LastElement.Type; //由头一个标识符表示整串标识符的类型
                     break;
-                case ElemtntType.Array:
+                case NodeType.Array:
                     ArrayNode array = (ArrayNode) element;
                     if (!Symbols.Contain(array.Content)) return; //TODO:报错 当前上文中不存在标识符 ""
                     DefineVariableNode variableNode = Symbols[array.Content];
@@ -405,11 +430,11 @@ namespace Core.SemanticAnalysis
             }
         }
 
-        private static void AnalyzeNextElement(ElementNode element, CustomDefinition enviroument, bool isStatic = false)
+        private void AnalyzeNextElement(ElementNode element, CustomDefinition enviroument, bool isStatic = false)
         {
-            switch (element.ElemtntType)
+            switch (element.NodeType)
             {
-                case ElemtntType.Variable:
+                case NodeType.Variable:
                     DefineVariableNode variable = null;
                     if (enviroument is ClassDefinition classDefinition) variable = classDefinition.GetField(element.Content);
                     if (enviroument is StructDefinition structDefinition) variable = structDefinition.GetField(element.Content);
@@ -421,7 +446,7 @@ namespace Core.SemanticAnalysis
                     element.Type = element.Definition.Type;
                     if (element.NextElement != null) AnalyzeNextElement(element.NextElement, element.Type);
                     break;
-                case ElemtntType.Invoker:
+                case NodeType.Invoker:
                     InvokerNode invoker = (InvokerNode)element;
                     foreach (ExpressionNode expressionNode in invoker.Parms)
                         AnalyzeExpression(expressionNode);
@@ -432,7 +457,7 @@ namespace Core.SemanticAnalysis
                     invoker.Type = function.ReturnType;
                     if (invoker.NextElement != null) AnalyzeNextElement(invoker.NextElement, element.Type);
                     break;
-                case ElemtntType.Array:
+                case NodeType.Array:
                     if (!Symbols.Contain(element.Content)) return; //TODO:报错 当前上文中不存在标识符 ""
                     DefineVariableNode variableNode = null;
                     if (enviroument is ClassDefinition classDefinition1) variableNode = classDefinition1.GetField(element.Content);
@@ -448,7 +473,7 @@ namespace Core.SemanticAnalysis
             }
         }
 
-        private static CustomDefinition GetDefinition(DefSpecifierNode defSpecifier)
+        private CustomDefinition GetDefinition(DefSpecifierNode defSpecifier)
         {
             for (NameSpaceDefinition nameSpace = Parser.RootNameSpace;
                 defSpecifier.NextSpecifier != null;

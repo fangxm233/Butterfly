@@ -2,15 +2,16 @@
 
 namespace Core.SyntacticAnalysis.Nodes
 {
-    public class ChunkNode : AnalysisNode
+    public class ChunkNode : SyntaxNode
     {
-        public List<AnalysisNode> Nodes = new List<AnalysisNode>();
+        public List<SyntaxNode> Nodes = new List<SyntaxNode>();
 
         public ChunkNode()
         {
             NodeType = NodeType.Chunk;
         }
 
-        internal void AddNode(AnalysisNode node) => Nodes.Add(node);
+        internal void AddNode(SyntaxNode node) => Nodes.Add(node);
+        internal void AddFirstNode(SyntaxNode node) => Nodes.Insert(0, node);
     }
 }

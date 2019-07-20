@@ -1,4 +1,5 @@
 ﻿using System;
+using Core.LexicalAnalysis;
 using Core.SyntacticAnalysis.Definitions;
 
 namespace Core.SyntacticAnalysis.Nodes
@@ -7,7 +8,7 @@ namespace Core.SyntacticAnalysis.Nodes
     {
         UMinus, Not, Cast,
         Multiply, Divide, Modulus,
-        Puls, Minus,
+        Plus, Minus,
         Greater, GreaterEqual, Less, LessEqual,
         Equal, NotEqual,
         And,
@@ -16,6 +17,7 @@ namespace Core.SyntacticAnalysis.Nodes
 
     public class OperateNode : ExpressionNode
     {
+        private Token _op;
         public OperateType OperateType { get; internal set; }
         public ExpressionNode Left { get; internal set; }
         public ExpressionNode Right { get; internal set; }
@@ -37,7 +39,7 @@ namespace Core.SyntacticAnalysis.Nodes
                         return "/";
                     case OperateType.Modulus:
                         return "%";
-                    case OperateType.Puls:
+                    case OperateType.Plus:
                         return "+";
                     case OperateType.Minus:
                         return "-";
@@ -65,23 +67,26 @@ namespace Core.SyntacticAnalysis.Nodes
         public CustomDefinition CastType { get; internal set; }
         internal string CastTypeName;
 
-        public OperateNode(OperateType operateType, ExpressionNode left, ExpressionNode right)
+        public OperateNode(Token op, OperateType operateType, ExpressionNode left, ExpressionNode right)
         {
+            _op = op;
             Left = left;
             Right = right;
             OperateType = operateType;
             NodeType = NodeType.Operate;
         }
 
-        public OperateNode(OperateType operateType, ExpressionNode right)
+        public OperateNode(Token op, OperateType operateType, ExpressionNode right)
         {
+            _op = op;
             Right = right;
             OperateType = operateType;
             NodeType = NodeType.Operate;
         }
 
-        public OperateNode(string castTypeName, ExpressionNode right)
+        public OperateNode(Token op, string castTypeName, ExpressionNode right)
         {
+            _op = op;
             OperateType = OperateType.Cast;
             NodeType = NodeType.Operate;
             CastTypeName = castTypeName;

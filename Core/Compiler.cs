@@ -1,8 +1,8 @@
-﻿using System;
-using System.Diagnostics;
-using Core.LexicalAnalysis;
+﻿using Core.LexicalAnalysis;
 using Core.SemanticAnalysis;
 using Core.SyntacticAnalysis;
+using System;
+using System.Diagnostics;
 
 namespace Core
 {
@@ -11,10 +11,13 @@ namespace Core
         public static void Compile(string[] files)
         {
             //Stopwatch sw = new Stopwatch();
-            Lexer.Scan(files);
             //sw.Start();
-            Parser.Match(files[0]);
-            SemanticAnalyzer.Analyze();
+            Lexer lexer = new Lexer();
+            lexer.Scan(files);
+            Parser parser = new Parser();
+            parser.Parse(files[0], lexer);
+            SemanticAnalyzer analyzer = new SemanticAnalyzer();
+            analyzer.Analyze();
             //sw.Stop();
             //Console.WriteLine(sw.ElapsedMilliseconds);
             //Lexer.Next();

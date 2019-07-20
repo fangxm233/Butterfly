@@ -1,9 +1,13 @@
-﻿using Core.SyntacticAnalysis.Definitions;
+﻿using Core.LexicalAnalysis;
+using Core.SyntacticAnalysis.Definitions;
 
 namespace Core.SyntacticAnalysis.Nodes
 {
-    public class DefineVariableNode : AnalysisNode
+    public class DefineVariableNode : SyntaxNode
     {
+        private Token _type;
+        private Token _name;
+
         public CustomDefinition Type { get; internal set; }
         public string Name { get; internal set; }
         public AccessLevel AccessLevel { get; internal set; }
@@ -14,10 +18,13 @@ namespace Core.SyntacticAnalysis.Nodes
 
         internal string TypeName;
 
-        public DefineVariableNode(string name, string typeName, AccessLevel accessLevel, bool isStatic = false, bool isArray = false, byte rankNum = 0)
+        public DefineVariableNode(Token name, Token type, AccessLevel accessLevel,
+            bool isStatic = false, bool isArray = false, byte rankNum = 0)
         {
-            Name = name;
-            TypeName = typeName;
+            Name = name.Content;
+            TypeName = type.Content;
+            _type = type;
+            _name = name;
             NodeType = NodeType.DefineVariable;
             AccessLevel = accessLevel;
             IsStatic = isStatic;

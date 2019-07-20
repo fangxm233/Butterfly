@@ -1,8 +1,9 @@
-﻿using Core.SyntacticAnalysis.Definitions;
+﻿using Core.LexicalAnalysis;
+using Core.SyntacticAnalysis.Definitions;
 
 namespace Core.SyntacticAnalysis.Nodes
 {
-    public class DefSpecifierNode : AnalysisNode
+    public class DefSpecifierNode : SyntaxNode
     {
         public DefSpecifierNode(string content)
         {

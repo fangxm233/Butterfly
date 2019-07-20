@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -7,50 +8,50 @@ namespace Core.LexicalAnalysis
 {
     internal class Lexer
     {
-        public static Token NextToken;
-        public static string NextTokenContent;
-        public static TokenType NextTokenType;
+        public Token NextToken;
+        public string NextTokenContent;
+        public TokenType NextTokenType;
 
-        public static int Line = 1;
-        public static int FileIndex;
+        public int Line = 1;
+        public int Column = 0;
+        public int FileIndex;
         public static int FileCount;
-        private static char _peek = ' ';
+        private char _peek = ' ';
         private static readonly Dictionary<string, TokenType> s_keywordsSet = new Dictionary<string, TokenType>();
         private static readonly Dictionary<char, char> s_ECSet = new Dictionary<char, char>();
         private static readonly Dictionary<string, TokenType> s_signSet = new Dictionary<string, TokenType>();
-        private static StreamReader _streamReader;
-        private static string[] _files;
+        private StreamReader _streamReader;
+        private string[] _files;
 
         //文件 第几个词
-        private static readonly List<List<Token>> s_tokens = new List<List<Token>>();
-        private static int _index;
-        private static List<int> Marks = new List<int>();
+        private readonly List<List<Token>> s_tokens = new List<List<Token>>();
+        private int _index;
 
         static Lexer()
         {
-            s_keywordsSet.Add("if", TokenType.If);
-            s_keywordsSet.Add("else", TokenType.Else);
-            s_keywordsSet.Add("while", TokenType.While);
-            s_keywordsSet.Add("for", TokenType.For);
-            s_keywordsSet.Add("break", TokenType.Command);
-            s_keywordsSet.Add("continue", TokenType.Command);
-            s_keywordsSet.Add("return", TokenType.Command);
-            s_keywordsSet.Add("class", TokenType.Class);
-            s_keywordsSet.Add("struct", TokenType.Struct);
-            s_keywordsSet.Add("interface", TokenType.Interface);
-            s_keywordsSet.Add("namespace", TokenType.NameSpace);
-            s_keywordsSet.Add("using", TokenType.Using);
-            s_keywordsSet.Add("func", TokenType.Func);
-            s_keywordsSet.Add("var", TokenType.Var);
-            s_keywordsSet.Add("let", TokenType.Let);
-            s_keywordsSet.Add("inv", TokenType.Inv);
-            s_keywordsSet.Add("new", TokenType.New);
-            s_keywordsSet.Add("override", TokenType.Override);
-            s_keywordsSet.Add("static", TokenType.Static);
-            s_keywordsSet.Add("true", TokenType.True);
-            s_keywordsSet.Add("false", TokenType.False);
-            s_keywordsSet.Add("cast", TokenType.Cast);
-            s_keywordsSet.Add("public", TokenType.Public);
+            s_keywordsSet.Add("if", TokenType.IfKeyword);
+            s_keywordsSet.Add("else", TokenType.ElseKeyword);
+            s_keywordsSet.Add("while", TokenType.WhileKeyword);
+            s_keywordsSet.Add("for", TokenType.ForKeyword);
+            s_keywordsSet.Add("break", TokenType.BreakKeyword);
+            s_keywordsSet.Add("continue", TokenType.ContinueKeyword);
+            s_keywordsSet.Add("return", TokenType.ReturnKeyword);
+            s_keywordsSet.Add("class", TokenType.ClassKeyword);
+            s_keywordsSet.Add("struct", TokenType.StructKeyword);
+            s_keywordsSet.Add("interface", TokenType.InterfaceKeyword);
+            s_keywordsSet.Add("namespace", TokenType.NameSpaceKeyword);
+            s_keywordsSet.Add("using", TokenType.UsingKeyword);
+            s_keywordsSet.Add("func", TokenType.FuncKeyword);
+            s_keywordsSet.Add("var", TokenType.VarKeyword);
+            s_keywordsSet.Add("let", TokenType.LetKeyword);
+            s_keywordsSet.Add("inv", TokenType.InvKeyword);
+            s_keywordsSet.Add("new", TokenType.NewKeyword);
+            s_keywordsSet.Add("override", TokenType.OverrideKeyword);
+            s_keywordsSet.Add("static", TokenType.StaticKeyword);
+            s_keywordsSet.Add("true", TokenType.TrueKeyword);
+            s_keywordsSet.Add("false", TokenType.FalseKeyword);
+            s_keywordsSet.Add("cast", TokenType.CastKeyword);
+            s_keywordsSet.Add("public", TokenType.PublicKeyword);
 
             s_ECSet.Add('\"', '\"');
             s_ECSet.Add('\'', '\'');
@@ -61,10 +62,10 @@ namespace Core.LexicalAnalysis
             s_ECSet.Add('r', '\r'); //回车
             s_ECSet.Add('n', '\n'); //换行
 
-            s_signSet.Add("[", TokenType.SquareBracket);
-            s_signSet.Add("]", TokenType.SquareBracket);
-            s_signSet.Add("(", TokenType.Parenthesis);
-            s_signSet.Add(")", TokenType.Parenthesis);
+            s_signSet.Add("[", TokenType.OpenBracket);
+            s_signSet.Add("]", TokenType.CloseBracket);
+            s_signSet.Add("(", TokenType.OpenParen);
+            s_signSet.Add(")", TokenType.CloseParen);
             s_signSet.Add("-", TokenType.Sign);
             s_signSet.Add("+", TokenType.Sign);
             s_signSet.Add("!", TokenType.Sign);
@@ -81,7 +82,7 @@ namespace Core.LexicalAnalysis
             s_signSet.Add("||", TokenType.Sign);
             s_signSet.Add(",", TokenType.Sign);
             s_signSet.Add(".", TokenType.Sign);
-            s_signSet.Add(":", TokenType.Sign);
+            s_signSet.Add(":", TokenType.Colon);
             s_signSet.Add("=", TokenType.Assign);
             s_signSet.Add("+=", TokenType.Assign);
             s_signSet.Add("-=", TokenType.Assign);
@@ -89,19 +90,17 @@ namespace Core.LexicalAnalysis
             s_signSet.Add("/=", TokenType.Assign);
             s_signSet.Add("%=", TokenType.Assign);
             s_signSet.Add(";", TokenType.Semicolon);
-            s_signSet.Add("{", TokenType.LBraces);
-            s_signSet.Add("}", TokenType.RBraces);
+            s_signSet.Add("{", TokenType.OpenBrace);
+            s_signSet.Add("}", TokenType.CloseBrace);
         }
 
-        public static Token Next()
+        public Token Next()
         {
             while (true)
             {
                 NextToken = s_tokens[FileIndex][_index++];
                 switch (NextToken.Type)
                 {
-                    case TokenType.Blank:
-                        continue;
                     case TokenType.EOL:
                         Line++;
                         continue;
@@ -117,7 +116,21 @@ namespace Core.LexicalAnalysis
             Line = NextToken.Line;
             return NextToken;
         }
-        public static Token Back()
+
+        public Token Peek(int forward)
+        {
+            Debug.Assert(forward > 0);
+            int index = _index;
+            Token resuilt = null;
+            for (int i = 0; i < forward; i++)
+            {
+                resuilt = Next();
+            }
+            _index = index;
+            return resuilt;
+        }
+
+        public Token Back()
         {
             _index--;
             while (true)
@@ -143,46 +156,58 @@ namespace Core.LexicalAnalysis
             NextTokenContent = NextToken.Content;
             return NextToken;
         }
-        public static void NextLine()
+        public void NextLine()
         {
             Line++;
             Next();
         }
 
-        public static void MakeMark() => Marks.Add(_index);
-        public static void BackMack()
-        {
-            _index = Marks.Last() - 1;
-            Next();
-            Marks.RemoveAt(Marks.Count - 1);
-        }
-
-        public static bool Match(TokenType type) => NextTokenType == type; //TODO:添加报错功能
-        public static bool Match(string content) => NextTokenContent == content; //TODO:添加报错功能
-        public static bool MatchNow(TokenType type) //TODO:添加报错功能
+        public bool Match(TokenType type) => NextTokenType == type; //TODO:添加报错功能
+        public bool Match(string content) => NextTokenContent == content; //TODO:添加报错功能
+        public bool MatchNow(TokenType type) //TODO:添加报错功能
         {
             bool b = NextTokenType == type;
             Next();
             return b;
         }
-        public static bool MatchNow(string content) //TODO:添加报错功能
+        public bool MatchNow(string content) //TODO:添加报错功能
         {
             bool b = NextTokenContent == content;
             Next();
             return b;
         }
-        public static bool MatchNext(TokenType type) //TODO:添加报错功能
+        public bool MatchNext(TokenType type) //TODO:添加报错功能
         {
             Next();
             return NextTokenType == type;
         }
-        public static bool MatchNext(string content) //TODO:添加报错功能
+        public bool MatchNext(string content) //TODO:添加报错功能
         {
             Next();
             return NextTokenContent == content;
         }
+        public Token Eat(TokenType type) //TODO:添加报错功能
+        {
+            if (Match(type))
+            {
+                Token t = NextToken;
+                Next();
+                return t;
+            }
+            else return null;
+        }
+        public Token Eat(string content) //TODO:添加报错功能
+        {
+            if (Match(content))
+            {
+                Token t = NextToken;
+                Next();
+                return t;
+            }
+            else return null;
+        }
 
-        public static void Scan(string[] files)
+        public void Scan(string[] files)
         {
             _files = files;
             for (int i = 0; i < _files.Length; i++)
@@ -195,7 +220,78 @@ namespace Core.LexicalAnalysis
             Next();
         }
 
-        private static void ScanFiles()
+        public string Reduct()
+        {
+            int line = 1, column = 1;
+            StringBuilder sb = new StringBuilder();
+            foreach (var token in s_tokens[0])
+            {
+                while (column < token.Column)
+                {
+                    sb.Append(' ');
+                    column++;
+                }
+                switch (token.Type)
+                {
+                    case TokenType.FloatLiteralToken:
+                    case TokenType.NumericLiteralToken:
+                    case TokenType.TrueKeyword:
+                    case TokenType.FalseKeyword:
+                    case TokenType.IfKeyword:
+                    case TokenType.ElseKeyword:
+                    case TokenType.WhileKeyword:
+                    case TokenType.ForKeyword:
+                    case TokenType.ClassKeyword:
+                    case TokenType.StructKeyword:
+                    case TokenType.InterfaceKeyword:
+                    case TokenType.NameSpaceKeyword:
+                    case TokenType.UsingKeyword:
+                    case TokenType.FuncKeyword:
+                    case TokenType.VarKeyword:
+                    case TokenType.LetKeyword:
+                    case TokenType.InvKeyword:
+                    case TokenType.CastKeyword:
+                    case TokenType.NewKeyword:
+                    case TokenType.ContinueKeyword:
+                    case TokenType.BreakKeyword:
+                    case TokenType.ReturnKeyword:
+                    case TokenType.OverrideKeyword:
+                    case TokenType.StaticKeyword:
+                    case TokenType.PublicKeyword:
+                    case TokenType.Sign:
+                    case TokenType.Assign:
+                    case TokenType.OpenParen:
+                    case TokenType.OpenBracket:
+                    case TokenType.Semicolon:
+                    case TokenType.OpenBrace:
+                    case TokenType.CloseBrace:
+                    case TokenType.Identifer:
+                        sb.Append(token.Content);
+                        column += token.Content.Length;
+                        break;
+                    case TokenType.StringLiteralToken:
+                        sb.Append($"\"{token.Content}\"");
+                        column += token.Content.Length + 2;
+                        break;
+                    case TokenType.CharacterLiteralToken:
+                        sb.Append($"\'{token.Content}\'");
+                        column += token.Content.Length + 2;
+                        break;
+                    case TokenType.EOL:
+                        sb.Append('\n');
+                        column = 1;
+                        line++;
+                        break;
+                    case TokenType.EOF:
+                        break;
+                    default:
+                        break;
+                }
+            }
+            return sb.ToString();
+        }
+
+        private void ScanFiles()
         {
             for (int i = 0; i < _files.Length; i++, FileIndex = i)
             {
@@ -220,7 +316,7 @@ namespace Core.LexicalAnalysis
                     }
                     if (_peek == '/')
                     {
-                        JumpAnnotation();
+                        JumpComment();
                         continue;
                     }
                     if (char.IsSymbol(_peek) || s_signSet.ContainsKey(_peek.ToString()))
@@ -239,7 +335,7 @@ namespace Core.LexicalAnalysis
             }
         }
 
-        private static void ScanSign()
+        private void ScanSign()
         {
             char c = _peek;
             Readch();
@@ -248,26 +344,26 @@ namespace Core.LexicalAnalysis
                 string s = c.ToString() + _peek;
                 if (s_signSet.ContainsKey(s))
                 {
-                    AddToken(s_signSet[s], s);
+                    AddToken(s_signSet[s], s, -1);
                     Readch();
                     return;
                 }
                 if (s_signSet.ContainsKey(_peek.ToString()))
                 {
-                    if (s_signSet.ContainsKey(c.ToString())) AddToken(s_signSet[c.ToString()], c.ToString());
+                    if (s_signSet.ContainsKey(c.ToString())) AddToken(s_signSet[c.ToString()], c.ToString(), -1);
                     else return; //TODO:报错 意外的符号
-                    AddToken(s_signSet[_peek.ToString()], _peek.ToString());
+                    AddToken(s_signSet[_peek.ToString()], _peek.ToString(), 0);
                     Readch();
                     return;
                 }
                 else return; //TODO:报错 意外的符号
             }
             if (s_signSet.ContainsKey(c.ToString()))
-                AddToken(s_signSet[c.ToString()], c.ToString());
+                AddToken(s_signSet[c.ToString()], c.ToString(), -1);
             else return; //TODO:报错 意外的符号
         }
 
-        private static void ScanIdentifer()
+        private void ScanIdentifer()
         {
             StringBuilder sb = new StringBuilder();
             do
@@ -278,12 +374,12 @@ namespace Core.LexicalAnalysis
 
             string s = sb.ToString();
             if (s_keywordsSet.ContainsKey(s))
-                AddToken(s_keywordsSet[s], s);
+                AddToken(s_keywordsSet[s], s, -s.Length);
             else
-                AddToken(TokenType.Identifer, s);
+                AddToken(TokenType.Identifer, s, -s.Length);
         }
 
-        private static void ScanNumber()
+        private void ScanNumber()
         {
             StringBuilder sb = new StringBuilder();
             while (char.IsDigit(_peek))
@@ -297,7 +393,7 @@ namespace Core.LexicalAnalysis
             {
                 if (int.TryParse(sb.ToString(), out int n))
                 {
-                    AddToken(TokenType.Number, sb.ToString());
+                    AddToken(TokenType.NumericLiteralToken, sb.ToString(), -sb.Length);
                     return;
                 }
                 return; //TODO:报错 整数常量太大
@@ -311,13 +407,14 @@ namespace Core.LexicalAnalysis
                 sb.Append(_peek);
             }
 
+            if (char.IsLetter(_peek) || _peek == '_') { return; } //TODO:报错 标识符不能以数字开头
             if (float.TryParse(sb.ToString(), out float f))
-                AddToken(TokenType.Float, sb.ToString());
+                AddToken(TokenType.FloatLiteralToken, sb.ToString(), -sb.Length);
             else
                 return; //TODO:报错 浮点数常量超出范围
         }
 
-        private static void ScanBlank()
+        private void ScanBlank()
         {
             for (; ; Readch())
             {
@@ -325,23 +422,24 @@ namespace Core.LexicalAnalysis
                 {
                     case ' ':
                     case '\t':
+                        continue;
                     case '\r':
-                        AddToken(TokenType.Blank);
+                        Column = 0;
                         continue;
                     case '\n':
-                        AddToken(TokenType.EOL);
+                        AddToken(TokenType.EOL, 0);
                         continue;
                 }
                 if (_streamReader.EndOfStream)
                 {
-                    AddToken(TokenType.EOF);
+                    AddToken(TokenType.EOF, 0);
                     break;
                 }
                 break;
             }
         }
 
-        private static void JumpAnnotation()
+        private void JumpComment()
         {
             Readch();
             if (_peek == '/')
@@ -349,7 +447,7 @@ namespace Core.LexicalAnalysis
                 {
                     if (_peek == '\n')
                     {
-                        AddToken(TokenType.EOL);
+                        AddToken(TokenType.EOL, 0);
                         Readch();
                         return;
                     }
@@ -365,7 +463,7 @@ namespace Core.LexicalAnalysis
                 {
                     if (_peek == '\n')
                     {
-                        AddToken(TokenType.EOL);
+                        AddToken(TokenType.EOL, 0);
                         Readch();
                     }
 
@@ -381,16 +479,16 @@ namespace Core.LexicalAnalysis
 
                     if (_streamReader.EndOfStream)
                     {
-                        AddToken(TokenType.EOF);
+                        AddToken(TokenType.EOF, 0);
                         return;
                     }
                 }
             }
 
-            AddToken(TokenType.Sign, "/");
+            AddToken(TokenType.Sign, "/", -1);
         }
 
-        private static void ScanString()
+        private void ScanString()
         {
             Readch();
             StringBuilder sb = new StringBuilder();
@@ -404,11 +502,11 @@ namespace Core.LexicalAnalysis
                 }
                 sb.Append(_peek);
             }
-            AddToken(TokenType.String, sb.ToString());
+            AddToken(TokenType.StringLiteralToken, sb.ToString(), -sb.Length - 1);
             Readch();
         }
 
-        private static void ScanChar()
+        private void ScanChar()
         {
             Readch();
             if (_peek == '\\')
@@ -416,49 +514,50 @@ namespace Core.LexicalAnalysis
                 char ec = ScanEC();
                 Readch();
                 if (_peek != '\'') { return;} //TODO:报错 字符文本中的字符太多
-                AddToken(TokenType.Char, ec.ToString());
+                AddToken(TokenType.CharacterLiteralToken, ec.ToString(), -3);
                 Readch();
                 return;
             }
             char c = _peek;
             Readch();
             if(_peek != '\'') { return;} //TODO:报错 字符文本中的字符太多
-            AddToken(TokenType.Char, c.ToString());
+            AddToken(TokenType.CharacterLiteralToken, c.ToString(), -2);
             Readch();
         }
 
-        private static char ScanEC()
+        private char ScanEC()
         {
             Readch();
             if (!s_ECSet.ContainsKey(_peek)) { return '\0';} //TODO:报错 无效的转义字符
             return s_ECSet[_peek];
         }
 
-        private static bool IsBlank(char c) => c == '\t' || c == '\r' || c == '\n' || c == ' ';
+        private bool IsBlank(char c) => c == '\t' || c == '\r' || c == '\n' || c == ' ';
 
-        private static void Readch()
+        private void Readch()
         {
             _peek = (char)_streamReader.Read();
+            Column++;
         }
 
-        private static void AddToken(TokenType type)
+        private void AddToken(TokenType type, int offset)
         {
+            s_tokens[FileIndex].Add(new Token(type, Line, Column + offset));
+            if (type == TokenType.EOF)
+                FileIndex++;
             if (type == TokenType.EOL)
             {
                 Line++;
-                return;
+                Column = 0;
             }
-            s_tokens[FileIndex].Add(new Token(type));
-            if (type == TokenType.EOF)
-                FileIndex++;
         }
 
-        private static void AddToken(string content) =>
-            s_tokens[FileIndex].Add(new Token(content));
+        private void AddToken(string content, int offset) =>
+            s_tokens[FileIndex].Add(new Token(content, Line, Column + offset));
 
-        private static void AddToken(TokenType type, string content)
+        private void AddToken(TokenType type, string content, int offset)
         {
-            Token token = new Token(type);
+            Token token = new Token(type, Line, Column + offset);
             token.Content = content;
             s_tokens[FileIndex].Add(token);
         }

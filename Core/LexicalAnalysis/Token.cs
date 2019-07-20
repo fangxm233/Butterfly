@@ -1,33 +1,26 @@
 ﻿namespace Core.LexicalAnalysis
 {
-    public enum TokenType
-    {
-        Float, String, Number, True, False, Char,
-        If, Else, While, For, Class, Struct, Interface, NameSpace, Using, Func, Var, Let, Inv, Cast, New, Override, Static, Public,
-        Sign, Assign, Parenthesis, SquareBracket, Semicolon, LBraces, RBraces, BasicType, BasicTypeI, Identifer, Command,
-        Blank, EOL, EOF,
-    }
-
     public class Token
     {
         public TokenType Type;
         public string Content;
 
         public int Line;
+        public int Column;
         public int File;
 
-        public Token(TokenType tokenType)
+        public Token(TokenType tokenType, int line, int column)
         {
-            Line = Lexer.Line;
-            File = Lexer.FileIndex;
             Type = tokenType;
+            Line = line;
+            Column = column;
         }
 
-        public Token(string content)
+        public Token(string content, int line, int column)
         {
-            Line = Lexer.Line;
-            File = Lexer.FileIndex;
             Content = content;
+            Line = line;
+            Column = column;
         }
 
         public override string ToString() => Content ?? Type.ToString();

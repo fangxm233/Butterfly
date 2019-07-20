@@ -2,8 +2,9 @@
 
 namespace Core.SyntacticAnalysis.Nodes
 {
-    public class ExpressionNode : AnalysisNode
+    public class ExpressionNode : SyntaxNode
     {
+        public ExpressionNode() { }
         public CustomDefinition Type { get; internal set; }
     }
 }
